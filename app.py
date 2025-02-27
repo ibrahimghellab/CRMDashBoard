@@ -151,6 +151,18 @@ def load_file(contents, period, selected_date):
         free_chargeable_fig = px.pie(values=free_chargeable_counts.values, names=free_chargeable_counts.index,
                                      title=f"Répartition Free/Chargeable ({selected_date})", hole=0.3)
 
+
+    if 'Description' not in df.columns:
+        return "Le fichier Excel ne contient pas la colonne 'Description'."
+    
+    # Filtrer les pannes et les casses
+    panne_count = df[df['Description'].str.contains('panne', case=False, na=False)].shape[0]
+    casse_count = df[df['Description'].str.contains('casse', case=False, na=False)].shape[0]
+    
+    # Créer un graphique des pannes et des casses
+    fault_data = pd.DataFrame({'Type': ['Panne', 'Casse'], 'Nombre': [panne_count, casse_count]})
+    fault_fig = px.bar(fault_data, x='Type', y='Nombre', title='Nombre de pannes et de casses')
+    
     # Créer la navbar avec les boutons pour chaque produit
     product_navbar = [
         html.Button(
@@ -167,6 +179,7 @@ def load_file(contents, period, selected_date):
         dcc.Graph(figure=order_type_fig),
         dcc.Graph(figure=status_fig),
         dcc.Graph(figure=garanty_fig),
+        dcc.Graph(figure=fault_fig),
         dcc.Graph(figure=free_chargeable_fig)
     ]), style, [{'label': d, 'value': d} for d in sorted(options)], product_navbar
 
