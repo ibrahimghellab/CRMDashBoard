@@ -64,7 +64,7 @@ app.layout = html.Div([
 )
 def load_file(contents, period, selected_date):
     if not contents:
-        return "Veuillez télécharger un fichier Excel.", {'display': 'none'}, [], [], px.bar(), px.pie()
+        return "Veuillez télécharger un fichier Excel.", {'display': 'none'}, [], []
 
     # Décoder le fichier Excel téléchargé
     content_type, content_string = contents.split(',')
@@ -73,18 +73,18 @@ def load_file(contents, period, selected_date):
         # Lire le fichier Excel avec Pandas
         df = pd.read_excel(io.BytesIO(decoded))
     except Exception as e:
-        return f"Erreur lors du traitement du fichier: {e}", {'display': 'none'}, [], [], px.bar(), px.pie()
+        return f"Erreur lors du traitement du fichier: {e}", {'display': 'none'}, [], []
 
     # Vérification des colonnes nécessaires
     required_columns = ['Order Type', 'Order Status', 'Total net value', 'Model', 'Created Date', 'Product Line', 'Warranty Status', 'Free/Chargeable']
     missing_columns = [col for col in required_columns if col not in df.columns]
     
     if missing_columns:
-        return f"Le fichier Excel ne contient pas les colonnes nécessaires: {', '.join(missing_columns)}", {'display': 'none'}, [], [], px.bar(), px.pie()
+        return f"Le fichier Excel ne contient pas les colonnes nécessaires: {', '.join(missing_columns)}", {'display': 'none'}, [], []
 
     # Vérifier que "Total net value" contient des valeurs numériques
     if not pd.api.types.is_numeric_dtype(df['Total net value']):
-        return "La colonne 'Total net value' doit contenir des valeurs numériques.", {'display': 'none'}, [], [], px.bar(), px.pie()
+        return "La colonne 'Total net value' doit contenir des valeurs numériques.", {'display': 'none'}, [], []
 
     # Convertir les dates pour la gestion des périodes
     df['Created Date'] = pd.to_datetime(df['Created Date'])
