@@ -19,10 +19,10 @@ app.layout = html.Div([
         children=html.Button('Télécharger un fichier Excel'),
         multiple=False
     ),
-
+    
     # Zone pour afficher les graphiques
     html.Div(id='graphs-container'),
-
+    
     # Dropdown pour choisir la période (mois, trimestre, année)
     html.Div([
         dcc.Dropdown(
@@ -46,6 +46,9 @@ app.layout = html.Div([
     # Navbar pour sélectionner un produit
     html.Div(id='product-navbar', style={'margin-top': '20px', 'display': 'flex', 'flex-wrap': 'wrap', 'gap': '10px'}),
 
+    html.Div([ 
+        dcc.Graph(id='status-graph')
+    ], id='status-graph-container', style={'display': 'none'}),
     # Graphique pour l'évolution du nombre d'appareils par produit spécifique (après sélection)
     html.Div([
         dcc.Graph(id='product-evolution-chart')
@@ -57,14 +60,16 @@ app.layout = html.Div([
     [Output('graphs-container', 'children'),
      Output('date-selection-container', 'style'),
      Output('date-dropdown', 'options'),
-     Output('product-navbar', 'children')],
+     Output('product-navbar', 'children'),
+     Output('status-graph', 'figure')],  # Ajouter une sortie pour mettre à jour le graphique 'status-graph'
     [Input('upload-data', 'contents'),
      Input('period-dropdown', 'value'),
-     Input('date-dropdown', 'value')]
+     Input('date-dropdown', 'value'),
+     Input('status-graph', 'clickData')]
 )
-def load_file(contents, period, selected_date):
+def load_file(contents, period, selected_date, click_data):
     if not contents:
-        return "Veuillez télécharger un fichier Excel.", {'display': 'none'}, [], []
+        return "Veuillez télécharger un fichier Excel.", {'display': 'none'}, [], [], {}
 
     # Décoder le fichier Excel téléchargé
     content_type, content_string = contents.split(',')
@@ -73,18 +78,18 @@ def load_file(contents, period, selected_date):
         # Lire le fichier Excel avec Pandas
         df = pd.read_excel(io.BytesIO(decoded))
     except Exception as e:
-        return f"Erreur lors du traitement du fichier: {e}", {'display': 'none'}, [], []
+        return f"Erreur lors du traitement du fichier: {e}", {'display': 'none'}, [], [], {}
 
     # Vérification des colonnes nécessaires
     required_columns = ['Order Type', 'Order Status', 'Total net value', 'Model', 'Created Date', 'Product Line', 'Warranty Status', 'Free/Chargeable']
     missing_columns = [col for col in required_columns if col not in df.columns]
     
     if missing_columns:
-        return f"Le fichier Excel ne contient pas les colonnes nécessaires: {', '.join(missing_columns)}", {'display': 'none'}, [], []
+        return f"Le fichier Excel ne contient pas les colonnes nécessaires: {', '.join(missing_columns)}", {'display': 'none'}, [], [], {}
 
     # Vérifier que "Total net value" contient des valeurs numériques
     if not pd.api.types.is_numeric_dtype(df['Total net value']):
-        return "La colonne 'Total net value' doit contenir des valeurs numériques.", {'display': 'none'}, [], []
+        return "La colonne 'Total net value' doit contenir des valeurs numériques.", {'display': 'none'}, [], [], {}
 
     # Convertir les dates pour la gestion des périodes
     df['Created Date'] = pd.to_datetime(df['Created Date'])
@@ -101,19 +106,31 @@ def load_file(contents, period, selected_date):
         return f"{status} ({count} commandes, {total_value:.2f} €)"
 
     # Créer le dictionnaire des statuts avec les libellés modifiés
-    status_counts = {
-        get_status_label("Order Approved"): df[df['Order Status'] == 'Order Approved'].shape[0],
-        get_status_label("Task Complete"): df[df['Order Status'] == 'Task Complete'].shape[0],
-        get_status_label("Waiting for Parts"): df[df['Order Status'] == 'Waiting for Parts'].shape[0],
-        get_status_label("Suspension for Reasons"): df[df['Order Status'] == 'Suspension for Reasons'].shape[0],
-        get_status_label("Waiting for PO"): df[df['Order Status'] == 'Waiting for PO'].shape[0],
-        get_status_label("In Work"): df[df['Order Status'] == 'In Work'].shape[0],
-        get_status_label("Waiting for Inspection"): df[df['Order Status'] == 'Waiting for Inspection'].shape[0],
-        get_status_label("PO Received"): df[df['Order Status'] == 'PO Received'].shape[0],  # Ajout de PO Received
-        get_status_label("Order Complete"): df[df['Order Status'] == 'Order Complete'].shape[0]  # Ajout de Order Complete
-    }
+    order_statuses = df['Order Status'].unique()
+    status_counts = {}
+    for status in order_statuses:
+        status_label = get_status_label(status)
+        status_counts[status_label] = df[df['Order Status'] == status].shape[0]
+    
     status_fig = px.pie(values=list(status_counts.values()), names=list(status_counts.keys()),
                         title="Répartition des statuts des commandes", hole=0.3)
+
+    total_orders = df.shape[0]
+    total_sum = df['Total net value'].sum()
+    if click_data:
+        # Si l'utilisateur clique sur une section du graphique, on extrait les informations
+        selected_status = click_data['points'][0]['label']
+        filtered_df = df[df['Order Status'] == selected_status]
+        
+        # Calculer les nouvelles valeurs pour les commandes et la somme
+        total_orders = filtered_df.shape[0]
+        total_sum = filtered_df['Total net value'].sum()
+
+    status_div = html.Div([
+        dcc.Graph(figure=status_fig),
+        html.P(f"Somme totale des {total_orders} commandes: {total_sum:.2f} €", id='total-sum', style={'textAlign': 'center', 'margin-top': '10px'}),
+        html.P(f"Nombre total de commandes: {total_orders}", id='total-orders', style={'textAlign': 'center', 'margin-top': '10px'})
+    ])
 
     # Créer le graphique de distribution des produits
     product_values = df['Product Line'].value_counts().to_dict()
@@ -153,8 +170,8 @@ def load_file(contents, period, selected_date):
 
 
     if 'Description' not in df.columns:
-        return "Le fichier Excel ne contient pas la colonne 'Description'."
-    
+        return "Le fichier Excel ne contient pas la colonne 'Description'.", {'display': 'none'}, [], [], {}
+
     # Filtrer les pannes et les casses
     panne_count = df[df['Description'].str.contains('panne', case=False, na=False)].shape[0]
     casse_count = df[df['Description'].str.contains('casse', case=False, na=False)].shape[0]
@@ -174,14 +191,15 @@ def load_file(contents, period, selected_date):
         for product, count in df['Product Line'].value_counts().items()
     ]
 
-    
     return html.Div([
         dcc.Graph(figure=order_type_fig),
-        dcc.Graph(figure=status_fig),
+        html.Div([status_div]),
         dcc.Graph(figure=garanty_fig),
         dcc.Graph(figure=fault_fig),
         dcc.Graph(figure=free_chargeable_fig)
-    ]), style, [{'label': d, 'value': d} for d in sorted(options)], product_navbar
+    ]), style, [{'label': d, 'value': d} for d in sorted(options)], product_navbar, status_fig
+
+
 
 # Callback pour mettre à jour le graphique d'évolution du produit sélectionné
 @app.callback(
@@ -225,6 +243,9 @@ def update_product_evolution(n_clicks, contents):
     # Créer le graphique en barres
     fig = px.bar(evolution_df, x='Created Date', y='count', title=f"Évolution du nombre d'appareils pour {product}")
     return fig, {'display': 'block'}
+
+
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)
