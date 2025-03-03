@@ -522,10 +522,10 @@ def update_tab(tab, contents):
         ])
         
     elif tab == 'tab2':
-        return html.Div(style=CARD_STYLE, children=[
+        return html.Div(style={**CARD_STYLE, 'overflowX': 'auto'}, children=[  # Garder le défilement horizontal si nécessaire
             html.H3("Commandes à suivre", style={'margin-top': '0', 'marginBottom': '20px', 'color': COLORS['dark']}),
             html.P(f"{len(df_filtered)} commandes nécessitent votre attention", 
-                  style={'marginBottom': '20px', 'fontStyle': 'italic', 'color': COLORS['text']}),
+                style={'marginBottom': '20px', 'fontStyle': 'italic', 'color': COLORS['text']}),
             
             dash_table.DataTable(
                 columns=[{'name': col, 'id': col} for col in df_filtered.columns if col != 'Color'],
@@ -534,12 +534,21 @@ def update_tab(tab, contents):
                     'backgroundColor': COLORS['light'],
                     'fontWeight': 'bold',
                     'border': f'1px solid {COLORS["light"]}',
-                    'borderRadius': '3px'
+                    'borderRadius': '3px',
+                    'textAlign': 'center',  # Centrer le texte dans les en-têtes
+                    'padding': '8px',  # Réduire le padding des en-têtes
+                    'fontSize': '14px'  # Réduire la taille de la police des en-têtes
                 },
                 style_cell={
                     'textAlign': 'left',
-                    'padding': '10px',
-                    'fontFamily': 'Roboto'
+                    'padding': '6px',  # Réduire le padding des cellules
+                    'fontFamily': 'Roboto',
+                    'minWidth': '100px',  # Largeur minimale des cellules
+                    'maxWidth': '200px',  # Largeur maximale des cellules
+                    'whiteSpace': 'normal',  # Permettre le retour à la ligne dans les cellules
+                    'overflow': 'hidden',
+                    'textOverflow': 'ellipsis',  # Ajouter des points de suspension si le texte est trop long
+                    'fontSize': '12px'  # Réduire la taille de la police des cellules
                 },
                 style_data_conditional=[
                     {
@@ -554,15 +563,18 @@ def update_tab(tab, contents):
                     }
                 ],
                 style_as_list_view=False,
-                page_size=15,
                 sort_action='native',
                 filter_action='native',
                 selected_rows=[],
                 tooltip_delay=0,
-                tooltip_duration=None
+                tooltip_duration=None,
+                style_table={
+                    'minWidth': '100%',  # Assurer que le tableau prend toute la largeur disponible
+                    'overflowX': 'auto',  # Activer le défilement horizontal si nécessaire
+                    'overflowY': 'hidden',  # Désactiver le défilement vertical
+                }
             )
         ])
-
 # Callback pour mettre à jour les options de dates en fonction de la période sélectionnée
 @app.callback(
     Output('date-dropdown', 'options'),
