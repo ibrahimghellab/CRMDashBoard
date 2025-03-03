@@ -33,6 +33,7 @@ def parse_contents(contents):
     Input('upload-data', 'contents'),
     prevent_initial_call=True
 )
+
 def update_table(contents):
     df = parse_contents(contents)
     
@@ -61,8 +62,6 @@ def update_table(contents):
     
     def color_code(row):
         today = datetime.today().date()  # Utilisation de .date() pour obtenir uniquement la date sans l'heure
-        if(row["Order Status"] == "Waiting for Inspection"):
-            return 'green'
         
         #Order Complete
         if pd.notna(row['Order Completed Date']):
@@ -147,7 +146,8 @@ def update_table(contents):
     df['Color'] = df.apply(color_code, axis=1)
     
     # Filtrer pour exclure "Order Completed" et les lignes vides
-    df_filtered = df[df.get('Order Completed Date').isna()]  # Utiliser get() pour éviter KeyError
+    df_filtered = df[df.get('Order Completed Date').isna() & (df['Color']!= '')]  # Utiliser get() pour éviter KeyError
+    print(df_filtered['Color'])
     
     # Sélectionner les colonnes pertinentes
     df_filtered = df_filtered[['Order No.', 'Customer Name', 'Service Technician', 'Model','Order Status', 
@@ -173,7 +173,8 @@ def update_table(contents):
                 'backgroundColor': 'orange',
                 'color': 'black'
             }
-        ]
+        ],
+        sort_action='native'
     )
 
 if __name__ == '__main__':
