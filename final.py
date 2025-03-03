@@ -1,18 +1,19 @@
 import dash
 from dash import dcc, html, dash_table
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
 import pandas as pd
 import base64
 import io
 import plotly.express as px
 from datetime import datetime
 
-app = dash.Dash(__name__)
+# Initialize the app with suppress_callback_exceptions=True
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
 
 # Variable pour stocker les données du fichier Excel
 df = pd.DataFrame()
 
-# Disposition de l'application
+# Disposition de l'application - include empty dropdowns in initial layout
 app.layout = html.Div([
     html.H1("Dashboard", style={'textAlign': 'center'}),
     dcc.Upload(
@@ -24,7 +25,16 @@ app.layout = html.Div([
         dcc.Tab(label='Onglet 1', value='tab1'),
         dcc.Tab(label='Onglet 2', value='tab2')
     ]),
-    html.Div(id='tabs-content')
+    html.Div(id='tabs-content'),
+    
+    # Add empty containers for dropdowns that will be populated later
+    html.Div([
+        html.Div(id='dropdown-container', children=[
+            dcc.Dropdown(id='period-dropdown', style={'display': 'none'}),
+            dcc.Dropdown(id='date-dropdown', style={'display': 'none'})
+        ]),
+        html.Div(id='free-chargeable-graph-container')
+    ], style={'display': 'none'})  # Hide this initially
 ])
 
 def parse_contents(contents):
@@ -43,8 +53,6 @@ def parse_contents(contents):
     [Input('tabs', 'value'),
      Input('upload-data', 'contents')]
 )
-
-
 def update_tab(tab, contents):
     global df  # Utilisation de la variable globale pour stocker les données
 
@@ -152,10 +160,6 @@ def update_tab(tab, contents):
             else:
                 return ''
         
-
-
-
-
         # Created
         if pd.notna(row['Created At']):
             created_date_days = (today - row['Created At'].date()).days  # .date() pour ignorer l'heure
@@ -166,12 +170,6 @@ def update_tab(tab, contents):
             else:
                 return ''
        
-
-        
-        
-        
-        
-        
         return ''
 
     df['Color'] = df.apply(color_code, axis=1)
@@ -189,42 +187,209 @@ def update_tab(tab, contents):
     for col in date_columns:
         if col in df_filtered.columns:
             df_filtered[col] = df_filtered[col].dt.strftime('%d %B %Y')
+    
+    # Création des graphiques pour l'onglet 1 (adapté du premier code)
+    graphs = []
+    
+    # Vérifier si les colonnes nécessaires pour les graphiques existent
+    graph_columns = {
+        'order_type': 'Order Type',
+        'order_status': 'Order Status',
+        'total_net_value': 'Total net value',
+        'product_line': 'Product Line',
+        'warranty_status': 'Warranty Status',
+        'free_chargeable': 'Free/Chargeable',
+        'created_date': 'Created Date'  # Colonne pour le filtre par date
+    }
+    
+    existing_columns = {key: col for key, col in graph_columns.items() if col in df.columns}
+    
+    # Graphique des types de commandes
+    if 'order_type' in existing_columns:
+        order_type_counts = df[existing_columns['order_type']].value_counts()
+        order_type_fig = px.pie(values=order_type_counts.values, names=order_type_counts.index,
+                                title="Répartition des types de commandes", hole=0.3)
+        graphs.append(dcc.Graph(figure=order_type_fig))
+    
+    # Graphique des statuts de commandes
+    if 'order_status' in existing_columns:
+        order_status_counts = df[existing_columns['order_status']].value_counts()
+        status_fig = px.pie(values=order_status_counts.values, names=order_status_counts.index,
+                            title="Répartition des statuts des commandes", hole=0.3)
+        
+        # Calcul de la somme totale si la colonne Total net value existe
+        total_orders = df.shape[0]
+        total_sum_text = ""
+        if 'total_net_value' in existing_columns:
+            total_sum = df[existing_columns['total_net_value']].sum()
+            total_sum_text = f"Somme totale des {total_orders} commandes: {total_sum:.2f} €"
+        
+        status_div = html.Div([
+            dcc.Graph(figure=status_fig),
+            html.P(total_sum_text, style={'textAlign': 'center', 'margin-top': '10px'}),
+            html.P(f"Nombre total de commandes: {total_orders}", style={'textAlign': 'center', 'margin-top': '10px'})
+        ])
+        graphs.append(status_div)
+    
+    # Graphique des produits
+    if 'product_line' in existing_columns:
+        product_values = df[existing_columns['product_line']].value_counts().to_dict()
+        product_fig = px.pie(values=list(product_values.values()), names=list(product_values.keys()),
+                            title="Nombres de produits par nom", hole=0.3)
+        graphs.append(dcc.Graph(figure=product_fig))
+    
+    # Graphique de garantie
+    if 'warranty_status' in existing_columns:
+        garanty_values = df[existing_columns['warranty_status']].value_counts()
+        garanty_fig = px.bar(x=garanty_values.index, y=garanty_values.values, 
+                             labels={'x': 'Equipements', 'y': 'Garantie'},
+                             title="Statut de garantie")
+        graphs.append(dcc.Graph(figure=garanty_fig))
+    
+    # Filtre par date pour le graphique Free/Chargeable
+    if 'free_chargeable' in existing_columns and 'created_date' in existing_columns:
+        # Convertir les dates si ce n'est pas déjà fait
+        if not pd.api.types.is_datetime64_any_dtype(df[existing_columns['created_date']]):
+            df[existing_columns['created_date']] = pd.to_datetime(df[existing_columns['created_date']])
+        
+        # Options de période
+        period_options = [
+            {'label': 'Mois', 'value': 'month'},
+            {'label': 'Trimestre', 'value': 'quarter'},
+            {'label': 'Année', 'value': 'year'}
+        ]
+        
+        # Préparer les options de date
+        date_dropdown_div = html.Div([
+            html.H4("Filtrer Free/Chargeable par période"),
+            html.Div([
+                dcc.Dropdown(
+                    id='period-dropdown',
+                    options=period_options,
+                    value='month',  # Par défaut : mois
+                    clearable=False,
+                    style={'width': '40%', 'margin-top': '10px', 'margin-right': '20px'}
+                ),
+                dcc.Dropdown(
+                    id='date-dropdown',
+                    style={'width': '40%', 'margin-top': '10px'}
+                )
+            ], style={'display': 'flex'}),
+            html.Div(id='free-chargeable-graph-container', style={'margin-top': '20px'})
+        ])
+        
+        graphs.append(date_dropdown_div)
+    elif 'free_chargeable' in existing_columns:
+        # Si pas de colonne date mais Free/Chargeable existe
+        free_chargeable_counts = df[existing_columns['free_chargeable']].value_counts()
+        free_chargeable_fig = px.pie(values=free_chargeable_counts.values, names=free_chargeable_counts.index,
+                                     title="Répartition Free/Chargeable", hole=0.3)
+        graphs.append(dcc.Graph(figure=free_chargeable_fig))
+    
+    # Graphique des pannes et casses si la colonne Description existe
+    if 'Description' in df.columns:
+        panne_count = df[df['Description'].str.contains('panne', case=False, na=False)].shape[0]
+        casse_count = df[df['Description'].str.contains('casse', case=False, na=False)].shape[0]
+        
+        fault_data = pd.DataFrame({'Type': ['Panne', 'Casse'], 'Nombre': [panne_count, casse_count]})
+        fault_fig = px.bar(fault_data, x='Type', y='Nombre', title='Nombre de pannes et de casses')
+        graphs.append(dcc.Graph(figure=fault_fig))
+    
     # Une fois que le fichier est téléchargé, afficher les onglets
     if tab == 'tab1':
         return html.Div([
-            html.H3("Contenu de l'onglet 1"),
+            html.H3("Analyse de données"),
             html.Div([
                 html.P(f"Nombre de lignes dans le fichier: {len(df)}"),
-                html.P(f"Colonnes du fichier: {', '.join(df.columns)}"),
-                # Afficher un tableau ou graphique selon les données
-                html.Table([
-                    html.Thead(
-                        html.Tr([html.Th(col) for col in df.columns])
-                    ),
-                    html.Tbody([
-                        html.Tr([html.Td(df.iloc[i][col]) for col in df.columns]) for i in range(min(5, len(df)))  # Afficher les 5 premières lignes
-                    ])
-                ])
+                # Ajout des graphiques dans l'onglet 1
+                html.Div(graphs)
             ])
         ])
     elif tab == 'tab2':
         return dash_table.DataTable(
-        columns=[{'name': col, 'id': col} for col in df_filtered.columns if col != 'Color'],
-        data=df_filtered.to_dict('records'),
-        style_data_conditional=[
-            {
-                'if': {'filter_query': '{Color} = "red"'},
-                'backgroundColor': 'red',
-                'color': 'white'
-            },
-            {
-                'if': {'filter_query': '{Color} = "orange"'},
-                'backgroundColor': 'orange',
-                'color': 'black'
-            }
-        ],
-        sort_action='native'
+            columns=[{'name': col, 'id': col} for col in df_filtered.columns if col != 'Color'],
+            data=df_filtered.to_dict('records'),
+            style_data_conditional=[
+                {
+                    'if': {'filter_query': '{Color} = "red"'},
+                    'backgroundColor': 'red',
+                    'color': 'white'
+                },
+                {
+                    'if': {'filter_query': '{Color} = "orange"'},
+                    'backgroundColor': 'orange',
+                    'color': 'black'
+                }
+            ],
+            sort_action='native'
+        )
+
+# Callback pour mettre à jour les options de dates en fonction de la période sélectionnée
+@app.callback(
+    Output('date-dropdown', 'options'),
+    [Input('period-dropdown', 'value'),
+     Input('upload-data', 'contents')]
+)
+def update_date_options(period, contents):
+    if not contents or not period:
+        return []
+    
+    # Vérifier si la colonne Created Date existe
+    created_date_col = 'Created Date'
+    if created_date_col not in df.columns:
+        return []
+    
+    # Convertir les dates si nécessaire
+    if not pd.api.types.is_datetime64_any_dtype(df[created_date_col]):
+        df[created_date_col] = pd.to_datetime(df[created_date_col])
+    
+    # Générer les options en fonction de la période
+    if period == 'month':
+        options = sorted(df[created_date_col].dt.strftime('%Y-%m').unique())
+    elif period == 'quarter':
+        options = sorted(df[created_date_col].dt.to_period('Q').astype(str).unique())
+    elif period == 'year':
+        options = sorted(df[created_date_col].dt.year.astype(str).unique())
+    
+    return [{'label': d, 'value': d} for d in options]
+
+# Callback pour mettre à jour le graphique Free/Chargeable en fonction de la date sélectionnée
+@app.callback(
+    Output('free-chargeable-graph-container', 'children'),
+    [Input('date-dropdown', 'value'),
+     Input('period-dropdown', 'value'),
+     Input('upload-data', 'contents')]
+)
+def update_free_chargeable_graph(selected_date, period, contents):
+    if not contents or not selected_date or not period:
+        return []
+    
+    # Vérifier si les colonnes nécessaires existent
+    if 'Free/Chargeable' not in df.columns or 'Created Date' not in df.columns:
+        return html.Div("Colonnes 'Free/Chargeable' ou 'Created Date' manquantes")
+    
+    # Convertir les dates si nécessaire
+    if not pd.api.types.is_datetime64_any_dtype(df['Created Date']):
+        df['Created Date'] = pd.to_datetime(df['Created Date'])
+    
+    # Filtrer les données selon la période sélectionnée
+    if period == 'month':
+        filtered_df = df[df['Created Date'].dt.strftime('%Y-%m') == selected_date]
+    elif period == 'quarter':
+        filtered_df = df[df['Created Date'].dt.to_period('Q').astype(str) == selected_date]
+    elif period == 'year':
+        filtered_df = df[df['Created Date'].dt.year.astype(str) == selected_date]
+    
+    # Créer le graphique Free/Chargeable avec les données filtrées
+    free_chargeable_counts = filtered_df['Free/Chargeable'].value_counts()
+    free_chargeable_fig = px.pie(
+        values=free_chargeable_counts.values, 
+        names=free_chargeable_counts.index,
+        title=f"Répartition Free/Chargeable ({selected_date})", 
+        hole=0.3
     )
+    
+    return dcc.Graph(figure=free_chargeable_fig)
 
 if __name__ == '__main__':
     app.run_server(debug=True)
