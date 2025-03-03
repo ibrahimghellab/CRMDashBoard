@@ -288,7 +288,8 @@ def update_tab(tab, contents):
     df['Color'] = df.apply(color_code, axis=1)
     
     # Filtrer pour exclure "Order Completed" et les lignes vides
-    df_filtered = df[df.get('Order Completed Date').isna() & (df['Color']!= '')]
+    df_filtered = df[df['Order Completed Date'].isna() & (df['Color'] != '') & (df['Order Status'] != "Cancelled")]
+
     
     # Sélectionner les colonnes pertinentes
     df_filtered = df_filtered[['Order No.', 'Customer Name', 'Service Technician', 'Model','Order Status', 
@@ -637,7 +638,6 @@ def update_tab(tab, contents):
                         'backgroundColor': 'rgba(255, 165, 0, 0.1)',
                     }
                 ],
-                page_size=10,
                 filter_action="native",
                 sort_action="native",
                 sort_mode="multi",
@@ -782,4 +782,4 @@ def update_free_chargeable_graph(selected_date, period_value, contents):
 
 # Exécuter l'application
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
