@@ -318,12 +318,30 @@ def update_tab(tab, contents):
     if tab == 'tab1':
         # Compteurs pour KPIs
         total_orders = len(df)
-        pending_orders = len(df[df['Order Status'] != 'Completed'])
+        pending_orders = len(df[~df["Order Status"].isin(["Order Complete", "Order Approved", "Task Complete"])])
         urgent_orders = len(df_filtered[df_filtered['Color'] == 'red'])
         warning_orders = len(df_filtered[df_filtered['Color'] == 'orange'])
         
+        # Obtenir les statistiques sur les statuts des commandes
+        order_status_counts = df['Order Status'].value_counts()
+        
+        # Préparation des données pour le tableau détaillé des statuts
+        if 'total_net_value' in existing_columns:
+            status_data = df.groupby('Order Status').agg({
+                'Order No.': 'count',
+                existing_columns['total_net_value']: 'sum'
+            }).reset_index()
+            status_data.columns = ['Statut', 'Nombre', 'Valeur (€)']
+            status_data['Valeur (€)'] = status_data['Valeur (€)'].round(2)
+        else:
+            status_data = df.groupby('Order Status').agg({
+                'Order No.': 'count'
+            }).reset_index()
+            status_data.columns = ['Statut', 'Nombre']
+        
         # Créer les KPI cards
         kpi_cards = html.Div([
+            
             html.Div(className='row', style={'display': 'flex', 'flexWrap': 'wrap', 'margin': '0 -10px'}, children=[
                 html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '200px'}, children=[
                     html.Div(style={**CARD_STYLE, 'backgroundColor': COLORS['primary'], 'color': 'white'}, children=[
@@ -349,6 +367,49 @@ def update_tab(tab, contents):
                         html.P("Commandes urgentes", style={'textAlign': 'center', 'margin': '5px 0 0 0', 'opacity': '0.8'})
                     ])
                 ])
+            ])
+        ])
+        
+        # Nouveau tableau pour détailler les statuts des commandes
+        status_detail_card = html.Div(style={**CARD_STYLE, 'marginTop': '20px'}, children=[
+            html.H3("Total des dossiers", style={'margin-top': '0', 'marginBottom': '20px', 'color': COLORS['dark']}),
+            html.Div(style={'overflowX': 'auto'}, children=[
+                dash_table.DataTable(
+                    data=status_data.to_dict('records'),
+                    columns=[{'name': col, 'id': col, 'type': 'numeric' if col != 'Statut' else 'text'} for col in status_data.columns],
+                    style_header={
+                        'backgroundColor': COLORS['light'],
+                        'fontWeight': 'bold',
+                        'border': f'1px solid {COLORS["light"]}',
+                        'textAlign': 'center',
+                    },
+                    style_cell={
+                        'textAlign': 'center',
+                        'padding': '10px',
+                        'fontFamily': 'Roboto',
+                    },
+                    style_cell_conditional=[
+                        {
+                            'if': {'column_id': 'Statut'},
+                            'textAlign': 'left',
+                            'fontWeight': 'bold',
+                        },
+                        {
+                            'if': {'column_id': 'Nombre'},
+                            'width': '120px',
+                        },
+                        {
+                            'if': {'column_id': 'Valeur (€)'},
+                            'width': '150px',
+                        }
+                    ],
+                    style_data_conditional=[
+                        {
+                            'if': {'row_index': 'odd'},
+                            'backgroundColor': 'rgba(0, 0, 0, 0.05)',
+                        }
+                    ],
+                )
             ])
         ])
         
@@ -386,15 +447,24 @@ def update_tab(tab, contents):
         # Graphique des statuts de commandes
         if 'order_status' in existing_columns:
             order_status_counts = df[existing_columns['order_status']].value_counts()
+            
+            # Calculer la valeur totale pour chaque statut si la colonne 'total_net_value' existe
+            if 'total_net_value' in existing_columns:
+                total_value_by_status = df.groupby(existing_columns['order_status'])[existing_columns['total_net_value']].sum()
+                labels = [f"{status}" 
+                        for status, count in order_status_counts.items()]
+            else:
+                labels = [f"{status} - {count} commandes" for status, count in order_status_counts.items()]
+            
             status_fig = px.pie(
                 values=order_status_counts.values, 
-                names=order_status_counts.index,
+                names=labels,  # Utiliser les labels personnalisés
                 title="Statuts des commandes",
                 hole=0.4,
                 color_discrete_sequence=px.colors.sequential.Greens_r
             )
             status_fig.update_layout(
-                legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+                legend=dict( y=-5, xanchor="center", x=-3),
                 margin=dict(t=40, b=40, l=20, r=20),
                 plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)'
@@ -518,6 +588,7 @@ def update_tab(tab, contents):
         
         return html.Div([
             kpi_cards,
+            status_detail_card,  # Nouveau tableau des statuts de commandes
             html.Div(graphs)
         ])
         
@@ -535,230 +606,180 @@ def update_tab(tab, contents):
                     'fontWeight': 'bold',
                     'border': f'1px solid {COLORS["light"]}',
                     'borderRadius': '3px',
-                    'textAlign': 'center',  # Centrer le texte dans les en-têtes
-                    'padding': '8px',  # Réduire le padding des en-têtes
-                    'fontSize': '14px'  # Réduire la taille de la police des en-têtes
+                    'padding': '15px 5px',
                 },
                 style_cell={
                     'textAlign': 'left',
-                    'padding': '6px',  # Réduire le padding des cellules
+                    'padding': '12px 5px',
                     'fontFamily': 'Roboto',
-                    'minWidth': '100px',  # Largeur minimale des cellules
-                    'maxWidth': '200px',  # Largeur maximale des cellules
-                    'whiteSpace': 'normal',  # Permettre le retour à la ligne dans les cellules
+                    'fontSize': '13px',
                     'overflow': 'hidden',
-                    'textOverflow': 'ellipsis',  # Ajouter des points de suspension si le texte est trop long
-                    'fontSize': '12px'  # Réduire la taille de la police des cellules
+                    'textOverflow': 'ellipsis',
+                    'whiteSpace': 'normal',
+                    'height': 'auto',
                 },
                 style_data_conditional=[
                     {
-                        'if': {'filter_query': '{Color} = "red"'},
-                        'backgroundColor': 'rgba(220, 53, 69, 0.15)',
-                        'borderLeft': f'4px solid {COLORS["danger"]}'
+                        'if': {'row_index': 'odd'},
+                        'backgroundColor': 'rgba(0, 0, 0, 0.05)',
                     },
                     {
-                        'if': {'filter_query': '{Color} = "orange"'},
-                        'backgroundColor': 'rgba(255, 193, 7, 0.15)',
-                        'borderLeft': f'4px solid {COLORS["warning"]}'
+                        'if': {
+                            'filter_query': '{Color} = "red"'
+                        },
+                        'backgroundColor': 'rgba(255, 0, 0, 0.1)', 
+                        'fontWeight': 'bold'
+                    },
+                    {
+                        'if': {
+                            'filter_query': '{Color} = "orange"'
+                        },
+                        'backgroundColor': 'rgba(255, 165, 0, 0.1)',
                     }
                 ],
-                style_as_list_view=False,
-                sort_action='native',
-                filter_action='native',
-                selected_rows=[],
-                tooltip_delay=0,
-                tooltip_duration=None,
-                style_table={
-                    'minWidth': '100%',  # Assurer que le tableau prend toute la largeur disponible
-                    'overflowX': 'auto',  # Activer le défilement horizontal si nécessaire
-                    'overflowY': 'hidden',  # Désactiver le défilement vertical
-                }
+                page_size=10,
+                filter_action="native",
+                sort_action="native",
+                sort_mode="multi",
+                page_action="native",
+                style_table={'minWidth': '100%'},
             )
         ])
-# Callback pour mettre à jour les options de dates en fonction de la période sélectionnée
+
+# Callback pour le graphique Free/Chargeable
 @app.callback(
-    Output('date-dropdown', 'options'),
+    [Output('date-dropdown', 'options'),
+     Output('date-dropdown', 'value')],
     [Input('period-dropdown', 'value'),
      Input('upload-data', 'contents')]
 )
-def update_date_options(period, contents):
-    if not contents or not period:
-        return []
+def update_date_options(period_value, contents):
+    if not contents or not period_value:
+        return [], None
     
-    # Vérifier si la colonne Created Date existe
-    created_date_col = 'Created Date'
-    if created_date_col not in df.columns:
-        return []
+    # Décoder et lire le fichier Excel
+    content_type, content_string = contents.split(',')
+    decoded = base64.b64decode(content_string)
+    df = pd.read_excel(io.BytesIO(decoded))
     
-    # Convertir les dates si nécessaire
-    if not pd.api.types.is_datetime64_any_dtype(df[created_date_col]):
-        df[created_date_col] = pd.to_datetime(df[created_date_col])
+    # Vérifier si les colonnes nécessaires existent
+    if 'Created Date' not in df.columns:
+        return [], None
     
-    # Générer les options en fonction de la période
-    if period == 'month':
-        df['month_period'] = df[created_date_col].dt.strftime('%Y-%m')
-        grouped = df.groupby('month_period').size().reset_index(name='count')
-        options = sorted(grouped['month_period'].unique())
-        labels = [f"{d} ({grouped[grouped['month_period']==d]['count'].values[0]} commandes)" for d in options]
-    elif period == 'quarter':
-        df['quarter_period'] = df[created_date_col].dt.to_period('Q').astype(str)
-        grouped = df.groupby('quarter_period').size().reset_index(name='count')
-        options = sorted(grouped['quarter_period'].unique())
-        labels = [f"{d} ({grouped[grouped['quarter_period']==d]['count'].values[0]} commandes)" for d in options]
-    elif period == 'year':
-        df['year_period'] = df[created_date_col].dt.year.astype(str)
-        grouped = df.groupby('year_period').size().reset_index(name='count')
-        options = sorted(grouped['year_period'].unique())
-        labels = [f"{d} ({grouped[grouped['year_period']==d]['count'].values[0]} commandes)" for d in options]
+    # Convertir en datetime
+    df['Created Date'] = pd.to_datetime(df['Created Date'], errors='coerce')
     
-    return [{'label': labels[i], 'value': options[i]} for i in range(len(options))]
+    # Générer les options en fonction de la période sélectionnée
+    if period_value == 'month':
+        # Format: "MM-YYYY"
+        date_groups = df['Created Date'].dt.strftime('%m-%Y').unique()
+        options = [{'label': datetime.strptime(date, '%m-%Y').strftime('%B %Y'), 'value': date} for date in date_groups if pd.notna(date)]
+    elif period_value == 'quarter':
+        # Format: "QX-YYYY"
+        df['Quarter'] = 'Q' + df['Created Date'].dt.quarter.astype(str) + '-' + df['Created Date'].dt.year.astype(str)
+        options = [{'label': quarter, 'value': quarter} for quarter in df['Quarter'].unique() if pd.notna(quarter)]
+    else:  # year
+        # Format: "YYYY"
+        date_groups = df['Created Date'].dt.year.astype(str).unique()
+        options = [{'label': year, 'value': year} for year in date_groups if pd.notna(year)]
+    
+    # Trier les options
+    options = sorted(options, key=lambda x: x['value'])
+    
+    # Valeur par défaut: la période la plus récente
+    default_value = options[-1]['value'] if options else None
+    
+    return options, default_value
 
-# Callback pour mettre à jour le graphique Free/Chargeable en fonction de la date sélectionnée
 @app.callback(
     Output('free-chargeable-graph-container', 'children'),
     [Input('date-dropdown', 'value'),
      Input('period-dropdown', 'value'),
      Input('upload-data', 'contents')]
 )
-def update_free_chargeable_graph(selected_date, period, contents):
-    if not contents or not selected_date:
-        return html.Div("Sélectionnez une date pour voir les données", style={'textAlign': 'center', 'padding': '20px'})
+def update_free_chargeable_graph(selected_date, period_value, contents):
+    if not contents or not selected_date or not period_value:
+        return html.Div("Sélectionnez une période et une date pour voir les données")
     
-    # Vérifier les colonnes nécessaires
-    if 'Free/Chargeable' not in df.columns or 'Created Date' not in df.columns:
-        return html.Div("Les colonnes nécessaires manquent dans le fichier", style={'textAlign': 'center', 'padding': '20px', 'color': COLORS['danger']})
+    # Décoder et lire le fichier Excel
+    content_type, content_string = contents.split(',')
+    decoded = base64.b64decode(content_string)
+    df = pd.read_excel(io.BytesIO(decoded))
     
-    # Convertir les dates si nécessaire
-    if not pd.api.types.is_datetime64_any_dtype(df['Created Date']):
-        df['Created Date'] = pd.to_datetime(df['Created Date'])
+    # Vérifier si les colonnes nécessaires existent
+    if 'Created Date' not in df.columns or 'Free/Chargeable' not in df.columns:
+        return html.Div("Les colonnes 'Created Date' ou 'Free/Chargeable' sont manquantes dans le fichier")
     
-    # Filtrer les données selon la période sélectionnée
-    if period == 'month':
-        filtered_df = df[df['Created Date'].dt.strftime('%Y-%m') == selected_date]
-    elif period == 'quarter':
-        filtered_df = df[df['Created Date'].dt.to_period('Q').astype(str) == selected_date]
+    # Convertir en datetime
+    df['Created Date'] = pd.to_datetime(df['Created Date'], errors='coerce')
+    
+    # Filtrer en fonction de la période sélectionnée
+    if period_value == 'month':
+        # Format attendu: "MM-YYYY"
+        month, year = selected_date.split('-')
+        mask = (df['Created Date'].dt.month == int(month)) & (df['Created Date'].dt.year == int(year))
+        title = f"Répartition Free/Chargeable - {datetime.strptime(selected_date, '%m-%Y').strftime('%B %Y')}"
+    elif period_value == 'quarter':
+        # Format attendu: "QX-YYYY"
+        quarter, year = selected_date.split('-')
+        quarter_num = int(quarter[1])
+        start_month = (quarter_num - 1) * 3 + 1
+        end_month = quarter_num * 3
+        mask = (df['Created Date'].dt.year == int(year)) & (df['Created Date'].dt.month >= start_month) & (df['Created Date'].dt.month <= end_month)
+        title = f"Répartition Free/Chargeable - {selected_date}"
     else:  # year
-        filtered_df = df[df['Created Date'].dt.year.astype(str) == selected_date]
+        # Format attendu: "YYYY"
+        mask = df['Created Date'].dt.year == int(selected_date)
+        title = f"Répartition Free/Chargeable - Année {selected_date}"
+    
+    filtered_df = df[mask]
+    
+    # Si aucune donnée après filtrage
+    if filtered_df.empty:
+        return html.Div("Aucune donnée disponible pour cette période", 
+                       style={'textAlign': 'center', 'padding': '20px', 'color': COLORS['text']})
     
     # Compter les valeurs Free/Chargeable
-    fc_counts = filtered_df['Free/Chargeable'].value_counts().reset_index()
-    fc_counts.columns = ['Status', 'Count']
+    free_chargeable_counts = filtered_df['Free/Chargeable'].value_counts()
     
-    # Créer un graphique à barres pour Free/Chargeable
-    fig = px.bar(
-        fc_counts,
-        x='Status',
-        y='Count',
-        color='Status',
-        title=f"Répartition Free/Chargeable pour {selected_date}",
-        color_discrete_map={'Free': COLORS['success'], 'Chargeable': COLORS['primary']}
+    # Créer un graphique à secteurs
+    fig = px.pie(
+        names=free_chargeable_counts.index,
+        values=free_chargeable_counts.values,
+        title=title,
+        color_discrete_sequence=px.colors.sequential.RdBu_r
     )
     
     fig.update_layout(
-        xaxis_title="",
-        yaxis_title="Nombre de commandes",
-        legend_title="Statut",
-        margin=dict(t=40, b=20, l=20, r=20),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+        margin=dict(t=50, b=50, l=20, r=20),
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)'
     )
     
-    # Ajouter un second graphique: évolution temporelle si suffisamment de données
-    if len(filtered_df) > 5:
-        # Grouper par jour pour voir l'évolution
-        filtered_df['day'] = filtered_df['Created Date'].dt.date
-        daily_counts = filtered_df.groupby(['day', 'Free/Chargeable']).size().reset_index(name='count')
+    # Ajouter des statistiques sur la valeur si disponible
+    stats_div = html.Div()
+    if 'Total net value' in df.columns:
+        total_value = filtered_df.groupby('Free/Chargeable')['Total net value'].sum().to_dict()
+        stats_rows = []
         
-        # Créer un line chart
-        fig2 = px.line(
-            daily_counts, 
-            x='day', 
-            y='count', 
-            color='Free/Chargeable',
-            title="Évolution quotidienne",
-            color_discrete_map={'Free': COLORS['success'], 'Chargeable': COLORS['primary']}
-        )
+        for category, count in free_chargeable_counts.items():
+            value = total_value.get(category, 0)
+            percentage = (count / free_chargeable_counts.sum()) * 100
+            
+            stats_rows.append(html.Tr([
+                html.Td(category, style={'fontWeight': 'bold', 'padding': '8px'}),
+                html.Td(f"{count} ({percentage:.1f}%)", style={'padding': '8px', 'textAlign': 'center'}),
+                html.Td(f"{value:.2f} €", style={'padding': '8px', 'textAlign': 'right'})
+            ]))
         
-        fig2.update_layout(
-            xaxis_title="Date",
-            yaxis_title="Nombre de commandes",
-            legend_title="Statut",
-            margin=dict(t=40, b=20, l=20, r=20),
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
-        )
         
-        return html.Div([
-            html.Div(dcc.Graph(figure=fig, config={'displayModeBar': False}), style={'marginBottom': '20px'}),
-            html.H4("Tendance sur la période", style={'marginTop': '30px', 'marginBottom': '20px', 'color': COLORS['dark']}),
-            dcc.Graph(figure=fig2, config={'displayModeBar': False})
-        ])
     
     return html.Div([
-        dcc.Graph(figure=fig, config={'displayModeBar': False})
+        dcc.Graph(figure=fig, config={'displayModeBar': False}),
+        stats_div
     ])
 
-# Callback pour mettre à jour la valeur par défaut du dropdown des dates
-@app.callback(
-    Output('date-dropdown', 'value'),
-    [Input('date-dropdown', 'options')]
-)
-def set_default_date(available_options):
-    if available_options and len(available_options) > 0:
-        return available_options[-1]['value']  # Sélectionne la date la plus récente par défaut
-    return None
-
-# Fonction pour exporter les données en CSV (pour un bouton futur)
-def export_to_csv(df_filtered):
-    return df_filtered.to_csv(index=False, encoding='utf-8')
-
-# Ajouter un callback pour exporter les données (à implémenter plus tard)
-@app.callback(
-    Output('download-link', 'href'),
-    [Input('tabs', 'value')]
-)
-def update_download_link(tab):
-    if tab == 'tab2' and not df.empty:
-        # Filtrer les commandes à suivre
-        df_filtered = df[df.get('Order Completed Date').isna() & (df['Color'] != '')]
-        
-        # Créer un lien de téléchargement
-        csv_string = export_to_csv(df_filtered)
-        csv_string = "data:text/csv;charset=utf-8," + csv_string
-        return csv_string
-    return ""
-
-# Amélioration du design: ajouter un footer
-app.layout.children.append(
-    html.Footer(
-        html.Div([
-            html.P("Tableau de Bord de Service © " + str(datetime.now().year), 
-                   style={'textAlign': 'center', 'color': COLORS['dark'], 'padding': '20px', 'opacity': '0.7'})
-        ]),
-        style={'backgroundColor': COLORS['light'], 'marginTop': '50px'}
-    )
-)
-
-# Fonctionnalité d'export à ajouter au design principal (pour une future mise à jour)
-export_button = html.Div([
-    html.A(
-        "Exporter les données",
-        id="download-link",
-        download="commandes_a_suivre.csv",
-        href="",
-        target="_blank",
-        style={
-            'backgroundColor': COLORS['primary'],
-            'color': 'white',
-            'padding': '10px 15px',
-            'borderRadius': '5px',
-            'textDecoration': 'none',
-            'display': 'inline-block',
-            'marginTop': '20px'
-        }
-    )
-], style={'textAlign': 'right', 'display': 'none'})  # Caché pour l'instant
-
-# Point d'entrée principal
+# Exécuter l'application
 if __name__ == '__main__':
-    app.run_server(debug=True, port=8050)
+    app.run_server(debug=True)
