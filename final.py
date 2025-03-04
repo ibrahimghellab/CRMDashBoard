@@ -323,10 +323,10 @@ def update_tab(tab, contents):
         urgent_orders = len(df_filtered[df_filtered['Color'] == 'red'])
         warning_orders = len(df_filtered[df_filtered['Color'] == 'orange'])
         
-        # Obtenir les statistiques sur les statuts des commandes
+        # Obtenir les statistiques sur les statuts des dossier
         order_status_counts = df['Order Status'].value_counts()
         
-        # Préparation des données pour le tableau détaillé des statuts
+        # Préparation des données pour le tableau détaillé des dossiers
         if 'total_net_value' in existing_columns:
             status_data = df.groupby('Order Status').agg({
                 'Order No.': 'count',
@@ -464,8 +464,10 @@ def update_tab(tab, contents):
                 hole=0.4,
                 color_discrete_sequence=px.colors.sequential.Greens_r
             )
+
+
             status_fig.update_layout(
-                legend=dict( y=-5, xanchor="center", x=-3),
+                legend=dict(orientation="h", y=-5, xanchor="center", x=0.5),
                 margin=dict(t=40, b=40, l=20, r=20),
                 plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)'
