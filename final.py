@@ -48,13 +48,34 @@ CARD_STYLE = {
     'margin-bottom': '20px',
 }
 
+LOADING_STYLE = {
+    'position': 'fixed',
+    'top': '20px',
+    'left': '50%',
+    'transform': 'translate(-50%)',
+    'zIndex': 9999
+}
+def regrouper_autres(df, colonne_categorie, colonne_valeur, seuil=1):
+    total = df[colonne_valeur].sum()
+    df["Pourcentage"] = (df[colonne_valeur] / total) * 100
+    df_filtre = df[df["Pourcentage"] >= seuil]
+    autres = df[df["Pourcentage"] < seuil][colonne_valeur].sum()
+    
+    if autres > 0:
+        df_filtre = pd.concat([df_filtre, pd.DataFrame({colonne_categorie: ["Autres"], colonne_valeur: [autres]})])
+    
+    return df_filtre[[colonne_categorie, colonne_valeur]]
+
 # Disposition de l'application avec un design amélioré
 app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['background'], 'minHeight': '100vh'}, children=[
+    # Composants de stockage pour les données
+    dcc.Store(id='stored-data', storage_type='memory'),
+    dcc.Store(id='stored-filtered-data', storage_type='memory'),
+    
     html.Div(style={'backgroundColor': COLORS['primary'], 'padding': '20px', 'color': 'white'}, children=[
         html.H1("Tableau de Bord de Service", style={'textAlign': 'center', 'fontWeight': '500'}),
         html.P("Analyse et suivi des commandes de service", style={'textAlign': 'center', 'opacity': '0.8'})
     ]),
-    
     html.Div(style=CONTENT_STYLE, children=[
         html.Div(style=CARD_STYLE, children=[
             dcc.Upload(
@@ -117,18 +138,27 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
                 )
             ]
         ),
-        html.Div(id='tabs-content', style={'padding': '20px 0'}),
+        # Envelopper le contenu des onglets avec dcc.Loading pour améliorer l'expérience utilisateur
+        dcc.Loading(
+            id="loading-tabs",
+            type="circle",
+            children=html.Div(id='tabs-content', style={'padding': '20px 0'})
+        ),
         
-        # Conteneurs pour les dropdowns qui seront peuplés plus tard
+        # Conteneurs pour les dropdowns et graphique
         html.Div([
             html.Div(id='dropdown-container', children=[
                 dcc.Dropdown(id='period-dropdown', style={'display': 'none'}),
                 dcc.Dropdown(id='date-dropdown', style={'display': 'none'})
             ]),
-            html.Div(id='free-chargeable-graph-container')
+            dcc.Loading(
+                type="cube",
+                children=html.Div(id='free-chargeable-graph-container')
+            )
         ], style={'display': 'none'})
     ])
 ])
+
 
 def parse_contents(contents):
     content_type, content_string = contents.split(',')
@@ -421,16 +451,15 @@ def update_tab(tab, contents):
         row1 = html.Div(className='row', style={'display': 'flex', 'flexWrap': 'wrap', 'margin': '20px -10px'}, children=[])
         
         # Graphique des types de commandes
-        if 'order_type' in existing_columns:
-            order_type_counts = df[existing_columns['order_type']].value_counts()
-            order_type_fig = px.pie(
-                values=order_type_counts.values, 
-                names=order_type_counts.index,
-                title="Types de commandes",
-                hole=0.4,
-                color_discrete_sequence=px.colors.sequential.Blues_r
-            )
-            order_type_fig.update_layout(
+        if "Order Type" in df.columns:
+            df_order_type = df["Order Type"].value_counts().reset_index()
+            df_order_type.columns = ["Type de Commande", "Nombre"]
+            df_order_type = regrouper_autres(df_order_type, "Type de Commande", "Nombre")
+            
+            fig_order_type = px.pie(df_order_type, values="Nombre", names="Type de Commande", 
+                                title="Types de commandes", 
+                            hole=0.4, color_discrete_sequence=px.colors.sequential.Blues_r)
+            fig_order_type.update_layout(
                 legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
                 margin=dict(t=40, b=40, l=20, r=20),
                 plot_bgcolor='rgba(0,0,0,0)',
@@ -440,40 +469,29 @@ def update_tab(tab, contents):
             row1.children.append(
                 html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '400px'}, children=[
                     html.Div(style=CARD_STYLE, children=[
-                        dcc.Graph(figure=order_type_fig, config={'displayModeBar': False})
+                        dcc.Graph(figure=fig_order_type, config={'displayModeBar': False})
                     ])
                 ])
             )
         
         # Graphique des statuts de commandes
-        if 'order_status' in existing_columns:
-            order_status_counts = df[existing_columns['order_status']].value_counts()
+        if "Order Status" in df.columns:
+            df_status = df["Order Status"].value_counts().reset_index()
+            df_status.columns = ["Statut", "Nombre"]
+            df_status = regrouper_autres(df_status, "Statut", "Nombre")
             
-            # Calculer la valeur totale pour chaque statut si la colonne 'total_net_value' existe
-            if 'total_net_value' in existing_columns:
-                total_value_by_status = df.groupby(existing_columns['order_status'])[existing_columns['total_net_value']].sum()
-                labels = [f"{status}" 
-                        for status, count in order_status_counts.items()]
-            else:
-                labels = [f"{status} - {count} commandes" for status, count in order_status_counts.items()]
-            
-            status_fig = px.pie(
-                values=order_status_counts.values, 
-                names=labels,  # Utiliser les labels personnalisés
-                title="Statuts des commandes",
-                hole=0.4,
-                color_discrete_sequence=px.colors.sequential.Greens_r
-            )
-
+            status_fig = px.pie(df_status, values="Nombre", names="Statut", 
+                                title="Statuts des commandes", 
+                                hole=0.4, color_discrete_sequence=px.colors.sequential.Greens_r)
 
             status_fig.update_layout(
-                legend=dict(orientation="h", y=-5, xanchor="center", x=0.5),
-                margin=dict(t=40, b=40, l=20, r=20),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)'
-            )
-            
-            # Calcul de la somme totale si la colonne Total net value existe
+                    legend=dict(orientation="h", y=-5, xanchor="center", x=0.5),
+                    margin=dict(t=40, b=40, l=20, r=20),
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                    
+                # Calcul de la somme totale si la colonne Total net value existe
             total_sum_text = ""
             if 'total_net_value' in existing_columns:
                 total_sum = df[existing_columns['total_net_value']].sum()
