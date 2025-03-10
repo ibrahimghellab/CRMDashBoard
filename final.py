@@ -5,14 +5,13 @@ import pandas as pd
 import base64
 import io
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime
 
 # Custom CSS pour le style
 external_stylesheets = ['https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap']
 
 # Initialisation de l'application
-app = dash.Dash(__name__, 
+app = dash.Dash(__name__,
                 suppress_callback_exceptions=True,
                 external_stylesheets=external_stylesheets)
 
@@ -71,13 +70,36 @@ def parse_contents(contents):
 
 # Disposition de l'application
 app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['background'], 'minHeight': '100vh'}, children=[
-    # Composants de stockage
+    # Stockage interne
     dcc.Store(id='stored-data', storage_type='memory'),
     dcc.Store(id='stored-agenda-data', storage_type='memory'),
     
+    # En-tête
     html.Div(style={'backgroundColor': COLORS['primary'], 'padding': '20px', 'color': 'white'}, children=[
         html.H1("Tableau de Bord de Service", style={'textAlign': 'center', 'fontWeight': '500'}),
         html.P("Analyse et suivi des commandes de service", style={'textAlign': 'center', 'opacity': '0.8'})
+    ]),
+    # Filtre global visible pour toute la page
+    html.Div(id='global-filter-container', style={'margin': '20px 0'}, children=[
+        html.Div(style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'}, children=[
+            html.Label("Période :", style={'marginRight': '10px', 'fontWeight': 'bold'}),
+            dcc.Dropdown(
+                id='period-dropdown',
+                options=[
+                    {'label': 'Mois', 'value': 'month'},
+                    {'label': 'Trimestre', 'value': 'quarter'},
+                    {'label': 'Année', 'value': 'year'}
+                ],
+                value='month',
+                clearable=False,
+                style={'width': '200px', 'marginRight': '20px'}
+            ),
+            html.Label("Date :", style={'marginRight': '10px', 'marginLeft': '20px', 'fontWeight': 'bold'}),
+            dcc.Dropdown(
+                id='date-dropdown',
+                style={'width': '200px'}
+            )
+        ])
     ]),
     html.Div(style=CONTENT_STYLE, children=[
         # Upload fichier commandes
@@ -87,7 +109,7 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
                 children=html.Div([
                     html.I(className="fas fa-file-excel", style={'fontSize': '42px', 'color': COLORS['primary']}),
                     html.Div('Glissez ou', style={'margin': '10px'}),
-                    html.Button('Sélectionnez un fichier Excel', 
+                    html.Button('Sélectionnez un fichier Excel',
                                style={
                                    'backgroundColor': COLORS['primary'],
                                    'color': 'white',
@@ -120,7 +142,7 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
                 children=html.Div([
                     html.I(className="fas fa-file-excel", style={'fontSize': '42px', 'color': COLORS['primary']}),
                     html.Div('Glissez ou', style={'margin': '10px'}),
-                    html.Button("Sélectionnez le fichier Agenda de Présence", 
+                    html.Button("Sélectionnez le fichier Agenda de Présence",
                                style={
                                    'backgroundColor': COLORS['primary'],
                                    'color': 'white',
@@ -185,22 +207,11 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
             id="loading-tabs",
             type="circle",
             children=html.Div(id='tabs-content', style={'padding': '20px 0'})
-        ),
-        # Conteneurs supplémentaires pour Free/Chargeable
-        html.Div([
-            html.Div(id='dropdown-container', children=[
-                dcc.Dropdown(id='period-dropdown', style={'display': 'none'}),
-                dcc.Dropdown(id='date-dropdown', style={'display': 'none'})
-            ]),
-            dcc.Loading(
-                type="cube",
-                children=html.Div(id='free-chargeable-graph-container')
-            )
-        ], style={'display': 'none'})
+        )
     ])
 ])
 
-# Callback pour le statut de téléchargement du fichier commandes
+# Callback pour mettre à jour le statut du téléchargement du fichier commandes
 @app.callback(
     Output('upload-status', 'children'),
     [Input('upload-data', 'contents')]
@@ -213,7 +224,7 @@ def update_upload_status(contents):
         ], style={'color': COLORS['success']})
     return ""
 
-# Callback pour le statut de téléchargement du fichier agenda
+# Callback pour mettre à jour le statut du téléchargement du fichier agenda
 @app.callback(
     Output('upload-agenda-status', 'children'),
     [Input('upload-agenda', 'contents')]
@@ -226,17 +237,18 @@ def update_agenda_upload_status(contents):
         ], style={'color': COLORS['success']})
     return ""
 
-# Callback principal pour afficher le contenu des onglets
+# Callback principal pour afficher le contenu des onglets en appliquant le filtre global
 @app.callback(
     Output('tabs-content', 'children'),
     [Input('tabs', 'value'),
      Input('upload-data', 'contents'),
-     Input('upload-agenda', 'contents')]
+     Input('upload-agenda', 'contents'),
+     Input('period-dropdown', 'value'),
+     Input('date-dropdown', 'value')]
 )
-def update_tab(tab, orders_contents, agenda_contents):
+def update_tab(tab, orders_contents, agenda_contents, period_value, selected_date):
     global df, df_agenda
 
-    # Onglets pour commandes (Tab 1 et Tab 2)
     if tab in ['tab1', 'tab2']:
         if not orders_contents:
             return html.Div([
@@ -247,7 +259,6 @@ def update_tab(tab, orders_contents, agenda_contents):
                 html.H3("Veuillez télécharger un fichier Excel pour commencer",
                         style={'textAlign': 'center', 'color': COLORS['text'], 'opacity': '0.7', 'fontWeight': '400'})
             ])
-        # Charger le fichier commandes
         try:
             df = parse_contents(orders_contents)
         except Exception as e:
@@ -262,8 +273,8 @@ def update_tab(tab, orders_contents, agenda_contents):
             ], style={'textAlign': 'center', 'marginTop': '30px'})
         
         # Vérification des colonnes requises
-        required_columns = ['Order No.', 'Customer Name', 'Service Technician', 'Model', 'Order Status', 
-                            'Created At', 'Approved Date', 'Task Completed Date', 'Order Completed Date', 
+        required_columns = ['Order No.', 'Customer Name', 'Service Technician', 'Model', 'Order Status',
+                            'Created At', 'Approved Date', 'Task Completed Date', 'Order Completed Date',
                             'Waiting for PO At', 'In Work At', 'Wf. Part At(H)', 'Suspension At']
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
@@ -272,20 +283,38 @@ def update_tab(tab, orders_contents, agenda_contents):
                 html.H4("Données incomplètes", style={'color': COLORS['warning']}),
                 html.P(f"Colonnes manquantes : {', '.join(missing_columns)}", style={'color': COLORS['text']})
             ], style={'textAlign': 'center', 'marginTop': '30px', 'padding': '20px', 'backgroundColor': '#fff8e1', 'borderRadius': '10px'})
+        
         if 'Order Completed Date' not in df.columns:
             df['Order Completed Date'] = pd.NaT
-        date_columns = ['Created At', 'Approved Date', 'Task Completed Date', 'Order Completed Date', 
+        
+        # Conversion des dates
+        date_columns = ['Created At', 'Approved Date', 'Task Completed Date', 'Order Completed Date',
                         'Waiting for PO At', 'In Work At', 'Wf. Part At(H)', 'Suspension At']
         for col in date_columns:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
         today = datetime.today()
-        
-        # Création ou ajout de la colonne 'Total net value' si elle n'existe pas
+
+        # Application du filtre global basé sur "Created At"
+        if 'Created At' in df.columns and period_value and selected_date:
+            if period_value == 'month':
+                month, year = selected_date.split('-')
+                mask = (df['Created At'].dt.month == int(month)) & (df['Created At'].dt.year == int(year))
+            elif period_value == 'quarter':
+                quarter, year = selected_date.split('-')
+                quarter_num = int(quarter[1])
+                start_month = (quarter_num - 1) * 3 + 1
+                end_month = quarter_num * 3
+                mask = (df['Created At'].dt.year == int(year)) & (df['Created At'].dt.month >= start_month) & (df['Created At'].dt.month <= end_month)
+            else:  # année
+                mask = df['Created At'].dt.year == int(selected_date)
+            df = df[mask]
+
+        # Création de la colonne "Total net value" si nécessaire
         if 'Total net value' not in df.columns:
             df['Total net value'] = 0
-        
-        # Fonction pour coder les couleurs selon l'ancienneté des dates
+
+        # Fonction de codage couleur selon ancienneté
         def color_code(row):
             today_date = datetime.today().date()
             if pd.notna(row['Order Completed Date']):
@@ -348,14 +377,14 @@ def update_tab(tab, orders_contents, agenda_contents):
         
         df['Color'] = df.apply(color_code, axis=1)
         df_filtered = df[df['Order Completed Date'].isna() & (df['Color'] != '') & (df['Order Status'] != "Cancelled")]
-        df_filtered = df_filtered[['Order No.', 'Customer Name', 'Service Technician', 'Model','Order Status', 
-                                   'Created At', 'Approved Date', 'Task Completed Date', 'Waiting for PO At', 
+        df_filtered = df_filtered[['Order No.', 'Customer Name', 'Service Technician', 'Model', 'Order Status',
+                                   'Created At', 'Approved Date', 'Task Completed Date', 'Waiting for PO At',
                                    'In Work At', 'Wf. Part At(H)', 'Suspension At', 'Color']]
         for col in date_columns:
             if col in df_filtered.columns:
                 df_filtered[col] = df_filtered[col].dt.strftime('%d %B %Y')
         
-        # Pour faciliter l'ajout conditionnel des graphiques, vérifier la présence de colonnes supplémentaires
+        # Définition des colonnes disponibles pour les graphiques
         graph_columns = {
             'order_type': 'Order Type',
             'order_status': 'Order Status',
@@ -363,7 +392,7 @@ def update_tab(tab, orders_contents, agenda_contents):
             'product_line': 'Product Line',
             'warranty_status': 'Warranty Status',
             'free_chargeable': 'Free/Chargeable',
-            'created_date': 'Created Date'
+            'created_date': 'Created At'
         }
         existing_columns = {key: col for key, col in graph_columns.items() if col in df.columns}
 
@@ -373,10 +402,7 @@ def update_tab(tab, orders_contents, agenda_contents):
             pending_orders = len(df[~df["Order Status"].isin(["Order Complete", "Order Approved", "Task Complete"])])
             urgent_orders = len(df_filtered[df_filtered['Color'] == 'red'])
             warning_orders = len(df_filtered[df_filtered['Color'] == 'orange'])
-
-            order_status_counts = df['Order Status'].value_counts()
-        
-        # Préparation des données pour le tableau détaillé des dossiers
+            
             if 'Total net value' in existing_columns:
                 status_data = df.groupby('Order Status').agg({
                     'Order No.': 'count',
@@ -385,11 +411,9 @@ def update_tab(tab, orders_contents, agenda_contents):
                 status_data.columns = ['Statut', 'Nombre', 'Valeur (€)']
                 status_data['Valeur (€)'] = status_data['Valeur (€)'].round(2)
             else:
-                status_data = df.groupby('Order Status').agg({
-                    'Order No.': 'count'
-                }).reset_index()
+                status_data = df.groupby('Order Status').agg({'Order No.': 'count'}).reset_index()
                 status_data.columns = ['Statut', 'Nombre']
-
+            
             kpi_cards = html.Div([
                 html.Div(className='row', style={'display': 'flex', 'flexWrap': 'wrap', 'margin': '0 -10px'}, children=[
                     html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '200px'}, children=[
@@ -419,8 +443,6 @@ def update_tab(tab, orders_contents, agenda_contents):
                 ])
             ])
             
-          
-            # Nouveau tableau pour détailler les statuts des commandes
             status_detail_card = html.Div(style={**CARD_STYLE, 'marginTop': '20px'}, children=[
                 html.H3("Total des dossiers", style={'margin-top': '0', 'marginBottom': '20px', 'color': COLORS['dark']}),
                 html.Div(style={'overflowX': 'auto'}, children=[
@@ -439,39 +461,27 @@ def update_tab(tab, orders_contents, agenda_contents):
                             'fontFamily': 'Roboto',
                         },
                         style_cell_conditional=[
-                            {
-                                'if': {'column_id': 'Statut'},
-                                'textAlign': 'left',
-                                'fontWeight': 'bold',
-                            },
-                            {
-                                'if': {'column_id': 'Nombre'},
-                                'width': '120px',
-                            },
-                            {
-                                'if': {'column_id': 'Valeur (€)'},
-                                'width': '150px',
-                            }
+                            {'if': {'column_id': 'Statut'}, 'textAlign': 'left', 'fontWeight': 'bold'},
+                            {'if': {'column_id': 'Nombre'}, 'width': '120px'},
+                            {'if': {'column_id': 'Valeur (€)'}, 'width': '150px'}
                         ],
                         style_data_conditional=[
-                            {
-                                'if': {'row_index': 'odd'},
-                                'backgroundColor': 'rgba(0, 0, 0, 0.05)',
-                            }
+                            {'if': {'row_index': 'odd'}, 'backgroundColor': 'rgba(0, 0, 0, 0.05)'}
                         ],
                     )
                 ])
             ])
-        
+            
+            # Création des graphiques
             graphs = []
-            # Première rangée de graphiques : Order Type et Order Status
+            # Première rangée : Order Type et Order Status
             row1 = html.Div(className='row', style={'display': 'flex', 'flexWrap': 'wrap', 'margin': '20px -10px'}, children=[])
             if "Order Type" in df.columns:
                 df_order_type = df["Order Type"].value_counts().reset_index()
                 df_order_type.columns = ["Type de Commande", "Nombre"]
                 df_order_type = regrouper_autres(df_order_type, "Type de Commande", "Nombre")
-                fig_order_type = px.pie(df_order_type, values="Nombre", names="Type de Commande", 
-                                        title="Types de commandes", hole=0.4)
+                fig_order_type = px.pie(df_order_type, values="Nombre", names="Type de Commande",
+                                       title="Types de commandes", hole=0.4, color_discrete_sequence=px.colors.sequential.Blues_r)
                 fig_order_type.update_layout(
                     legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
                     margin=dict(t=40, b=40, l=20, r=20),
@@ -479,43 +489,37 @@ def update_tab(tab, orders_contents, agenda_contents):
                     paper_bgcolor='rgba(0,0,0,0)'
                 )
                 row1.children.append(
-                    html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '400px'}, children=[
-                        html.Div(style=CARD_STYLE, children=[dcc.Graph(figure=fig_order_type, config={'displayModeBar': False})])
-                    ])
+                    html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '400px'},
+                             children=[html.Div(style=CARD_STYLE, children=[dcc.Graph(figure=fig_order_type, config={'displayModeBar': False})])])
                 )
             if "Order Status" in df.columns:
                 df_status = df["Order Status"].value_counts().reset_index()
                 df_status.columns = ["Statut", "Nombre"]
                 df_status = regrouper_autres(df_status, "Statut", "Nombre")
-                status_fig = px.pie(df_status, values="Nombre", names="Statut", 
-                                    title="Statuts des commandes", hole=0.4)
+                status_fig = px.pie(df_status, values="Nombre", names="Statut",
+                                    title="Statuts des commandes", hole=0.4, color_discrete_sequence=px.colors.sequential.Greens_r)
                 status_fig.update_layout(
                     legend=dict(orientation="h", y=-5, xanchor="center", x=0.5),
                     margin=dict(t=40, b=40, l=20, r=20),
                     plot_bgcolor='rgba(0,0,0,0)',
                     paper_bgcolor='rgba(0,0,0,0)'
                 )
-                # Calcul de la somme totale du prix des commandes
                 total_sum_text = ""
                 if 'Total net value' in existing_columns:
                     total_sum = df[existing_columns['Total net value']].sum()
                     total_sum_text = f"{total_sum:.2f} €"
-            
                 row1.children.append(
-                    html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '400px'}, children=[
-                        html.Div(style=CARD_STYLE, children=[
-                            dcc.Graph(figure=status_fig, config={'displayModeBar': False}),
-                            html.Div(style={'textAlign': 'center', 'marginTop': '10px'}, children=[
-                                html.Strong("Valeur totale: ", style={'marginRight': '5px', 'fontSize': '16px'}),
-                                html.Span(total_sum_text, style={'fontSize': '16px', 'color': COLORS['primary']})
-                            ]) if total_sum_text else None
-                        ])
-                    ])
+                    html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '400px'},
+                             children=[html.Div(style=CARD_STYLE, children=[
+                                 dcc.Graph(figure=status_fig, config={'displayModeBar': False}),
+                                 html.Div(style={'textAlign': 'center', 'marginTop': '10px'}, children=[
+                                     html.Strong("Valeur totale: ", style={'marginRight': '5px', 'fontSize': '16px'}),
+                                     html.Span(total_sum_text, style={'fontSize': '16px', 'color': COLORS['primary']})
+                                 ]) if total_sum_text else None
+                             ])])
                 )
-        
             graphs.append(row1)
-            
-            # Deuxième rangée de graphiques : Répartition des produits et Statut de garantie
+            # Deuxième rangée : Répartition des produits et Statut de garantie
             row2 = html.Div(className='row', style={'display': 'flex', 'flexWrap': 'wrap', 'margin': '20px -10px'}, children=[])
             if 'product_line' in existing_columns:
                 product_values = df[existing_columns['product_line']].value_counts().to_dict()
@@ -533,17 +537,17 @@ def update_tab(tab, orders_contents, agenda_contents):
                     paper_bgcolor='rgba(0,0,0,0)'
                 )
                 row2.children.append(
-                    html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '400px'}, children=[
-                        html.Div(style=CARD_STYLE, children=[dcc.Graph(figure=product_fig, config={'displayModeBar': False})])
-                    ])
+                    html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '400px'},
+                             children=[html.Div(style=CARD_STYLE, children=[dcc.Graph(figure=product_fig, config={'displayModeBar': False})])])
                 )
             if 'warranty_status' in existing_columns:
                 warranty_values = df[existing_columns['warranty_status']].value_counts()
                 warranty_fig = px.pie(
-                    values=warranty_values.values, 
+                    values=warranty_values.values,
                     names=warranty_values.index,
                     title="Statut de garantie",
-                    hole=0.4
+                    hole=0.4,
+                    color_discrete_sequence=px.colors.sequential.Oranges_r
                 )
                 warranty_fig.update_layout(
                     legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
@@ -552,48 +556,36 @@ def update_tab(tab, orders_contents, agenda_contents):
                     paper_bgcolor='rgba(0,0,0,0)'
                 )
                 row2.children.append(
-                    html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '400px'}, children=[
-                        html.Div(style=CARD_STYLE, children=[dcc.Graph(figure=warranty_fig, config={'displayModeBar': False})])
-                    ])
+                    html.Div(className='col', style={'flex': '1', 'padding': '10px', 'minWidth': '400px'},
+                             children=[html.Div(style=CARD_STYLE, children=[dcc.Graph(figure=warranty_fig, config={'displayModeBar': False})])])
                 )
             graphs.append(row2)
-            
-            # Section Free/Chargeable avec filtres, si les colonnes existent
-            if 'free_chargeable' in existing_columns and 'created_date' in existing_columns:
-                period_options = [
-                    {'label': 'Mois', 'value': 'month'},
-                    {'label': 'Trimestre', 'value': 'quarter'},
-                    {'label': 'Année', 'value': 'year'}
-                ]
-                filter_section = html.Div(className='row', style={'margin': '20px 0'}, children=[
-                    html.Div(style=CARD_STYLE, children=[
-                        html.H4("Analyse Free/Chargeable par période", style={'margin-top': '0', 'marginBottom': '20px', 'color': COLORS['dark']}),
-                        html.Div(style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '20px'}, children=[
-                            html.Label("Période:", style={'marginRight': '10px', 'fontWeight': 'bold'}),
-                            dcc.Dropdown(
-                                id='period-dropdown',
-                                options=period_options,
-                                value='month',
-                                clearable=False,
-                                style={'width': '200px', 'marginRight': '20px'}
-                            ),
-                            html.Label("Date:", style={'marginRight': '10px', 'marginLeft': '20px', 'fontWeight': 'bold'}),
-                            dcc.Dropdown(
-                                id='date-dropdown',
-                                style={'width': '200px'}
-                            )
-                        ]),
-                        html.Div(id='free-chargeable-graph-container', style={'marginTop': '20px'})
-                    ])
+            # Section Free/Chargeable (diagramme basé sur le dataframe filtré globalement)
+            if 'Free/Chargeable' in df.columns:
+                free_counts = df['Free/Chargeable'].value_counts()
+                fig_free = px.pie(
+                    names=free_counts.index,
+                    values=free_counts.values,
+                    title="Répartition Free/Chargeable",
+                    hole=0.4
+                )
+                fig_free.update_layout(
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+                    margin=dict(t=50, b=50, l=20, r=20),
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                free_section = html.Div(style=CARD_STYLE, children=[
+                    dcc.Graph(figure=fig_free, config={'displayModeBar': False})
                 ])
-                graphs.append(filter_section)
+                graphs.append(free_section)
             
             return html.Div([kpi_cards, status_detail_card, html.Div(graphs)])
         
         elif tab == 'tab2':
             return html.Div(style={**CARD_STYLE, 'overflowX': 'auto'}, children=[
                 html.H3("Commandes à suivre", style={'margin-top': '0', 'marginBottom': '20px', 'color': COLORS['dark']}),
-                html.P(f"{len(df_filtered)} commandes nécessitent votre attention", 
+                html.P(f"{len(df_filtered)} commandes nécessitent votre attention",
                        style={'marginBottom': '20px', 'fontStyle': 'italic', 'color': COLORS['text']}),
                 dash_table.DataTable(
                     columns=[{'name': col, 'id': col} for col in df_filtered.columns if col != 'Color'],
@@ -628,7 +620,6 @@ def update_tab(tab, orders_contents, agenda_contents):
                 )
             ])
     
-    # Onglet Agenda de Présence (Tab 3)
     elif tab == 'tab3':
         if not agenda_contents:
             return html.Div([
@@ -673,7 +664,7 @@ def update_tab(tab, orders_contents, agenda_contents):
         ])
         return agenda_info
 
-# Callback pour mettre à jour les options du dropdown de dates pour Free/Chargeable
+# Callback pour mettre à jour les options du dropdown de dates (basé sur "Created At")
 @app.callback(
     [Output('date-dropdown', 'options'),
      Output('date-dropdown', 'value')],
@@ -686,23 +677,23 @@ def update_date_options(period_value, contents):
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
     df_temp = pd.read_excel(io.BytesIO(decoded))
-    if 'Created Date' not in df_temp.columns:
+    if 'Created At' not in df_temp.columns:
         return [], None
-    df_temp['Created Date'] = pd.to_datetime(df_temp['Created Date'], errors='coerce')
+    df_temp['Created At'] = pd.to_datetime(df_temp['Created At'], errors='coerce')
     if period_value == 'month':
-        date_groups = df_temp['Created Date'].dt.strftime('%m-%Y').unique()
+        date_groups = df_temp['Created At'].dt.strftime('%m-%Y').unique()
         options = [{'label': datetime.strptime(date, '%m-%Y').strftime('%B %Y'), 'value': date} for date in date_groups if pd.notna(date)]
     elif period_value == 'quarter':
-        df_temp['Quarter'] = 'Q' + df_temp['Created Date'].dt.quarter.astype(str) + '-' + df_temp['Created Date'].dt.year.astype(str)
+        df_temp['Quarter'] = 'Q' + df_temp['Created At'].dt.quarter.astype(str) + '-' + df_temp['Created At'].dt.year.astype(str)
         options = [{'label': quarter, 'value': quarter} for quarter in df_temp['Quarter'].unique() if pd.notna(quarter)]
     else:
-        date_groups = df_temp['Created Date'].dt.year.astype(str).unique()
+        date_groups = df_temp['Created At'].dt.year.astype(str).unique()
         options = [{'label': year, 'value': year} for year in date_groups if pd.notna(year)]
     options = sorted(options, key=lambda x: x['value'])
     default_value = options[-1]['value'] if options else None
     return options, default_value
 
-# Callback pour mettre à jour le graphique Free/Chargeable
+# Callback pour mettre à jour le graphique Free/Chargeable (exemple indépendant)
 @app.callback(
     Output('free-chargeable-graph-container', 'children'),
     [Input('date-dropdown', 'value'),
@@ -715,26 +706,26 @@ def update_free_chargeable_graph(selected_date, period_value, contents):
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
     df_temp = pd.read_excel(io.BytesIO(decoded))
-    if 'Created Date' not in df_temp.columns or 'Free/Chargeable' not in df_temp.columns:
-        return html.Div("Les colonnes 'Created Date' ou 'Free/Chargeable' sont manquantes dans le fichier")
-    df_temp['Created Date'] = pd.to_datetime(df_temp['Created Date'], errors='coerce')
+    if 'Created At' not in df_temp.columns or 'Free/Chargeable' not in df_temp.columns:
+        return html.Div("Les colonnes 'Created At' ou 'Free/Chargeable' sont manquantes dans le fichier")
+    df_temp['Created At'] = pd.to_datetime(df_temp['Created At'], errors='coerce')
     if period_value == 'month':
         month, year = selected_date.split('-')
-        mask = (df_temp['Created Date'].dt.month == int(month)) & (df_temp['Created Date'].dt.year == int(year))
+        mask = (df_temp['Created At'].dt.month == int(month)) & (df_temp['Created At'].dt.year == int(year))
         title = f"Répartition Free/Chargeable - {datetime.strptime(selected_date, '%m-%Y').strftime('%B %Y')}"
     elif period_value == 'quarter':
         quarter, year = selected_date.split('-')
         quarter_num = int(quarter[1])
         start_month = (quarter_num - 1) * 3 + 1
         end_month = quarter_num * 3
-        mask = (df_temp['Created Date'].dt.year == int(year)) & (df_temp['Created Date'].dt.month >= start_month) & (df_temp['Created Date'].dt.month <= end_month)
+        mask = (df_temp['Created At'].dt.year == int(year)) & (df_temp['Created At'].dt.month >= start_month) & (df_temp['Created At'].dt.month <= end_month)
         title = f"Répartition Free/Chargeable - {selected_date}"
     else:
-        mask = df_temp['Created Date'].dt.year == int(selected_date)
+        mask = df_temp['Created At'].dt.year == int(selected_date)
         title = f"Répartition Free/Chargeable - Année {selected_date}"
     filtered_df = df_temp[mask]
     if filtered_df.empty:
-        return html.Div("Aucune donnée disponible pour cette période", 
+        return html.Div("Aucune donnée disponible pour cette période",
                         style={'textAlign': 'center', 'padding': '20px', 'color': COLORS['text']})
     free_chargeable_counts = filtered_df['Free/Chargeable'].value_counts()
     fig = px.pie(
