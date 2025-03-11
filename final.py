@@ -1,6 +1,6 @@
 import dash
 from dash import dcc, html, dash_table
-from dash.dependencies import Input, Output, State
+from dash.dependencies import Input, Output
 import pandas as pd
 import base64
 import io
@@ -79,7 +79,7 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
         html.H1("Tableau de Bord de Service", style={'textAlign': 'center', 'fontWeight': '500'}),
         html.P("Analyse et suivi des commandes de service", style={'textAlign': 'center', 'opacity': '0.8'})
     ]),
-    # Filtre global visible pour toute la page
+    # Filtre global (pour le fichier commandes)
     html.Div(id='global-filter-container', style={'margin': '20px 0'}, children=[
         html.Div(style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'}, children=[
             html.Label("Période :", style={'marginRight': '10px', 'fontWeight': 'bold'}),
@@ -108,8 +108,8 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
                 id='upload-data',
                 children=html.Div([
                     html.I(className="fas fa-file-excel", style={'fontSize': '42px', 'color': COLORS['primary']}),
-                    html.Div('Glissez ou', style={'margin': '10px'}),
-                    html.Button('Sélectionnez un fichier Excel',
+                    html.Div("Glissez ou"),
+                    html.Button("Sélectionnez un fichier Excel",
                                style={
                                    'backgroundColor': COLORS['primary'],
                                    'color': 'white',
@@ -141,7 +141,7 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
                 id='upload-agenda',
                 children=html.Div([
                     html.I(className="fas fa-file-excel", style={'fontSize': '42px', 'color': COLORS['primary']}),
-                    html.Div('Glissez ou', style={'margin': '10px'}),
+                    html.Div("Glissez ou"),
                     html.Button("Sélectionnez le fichier Agenda de Présence",
                                style={
                                    'backgroundColor': COLORS['primary'],
@@ -211,7 +211,9 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
     ])
 ])
 
-# Callback pour mettre à jour le statut du téléchargement du fichier commandes
+# -------------------------------
+# Callbacks pour le chargement des fichiers
+# -------------------------------
 @app.callback(
     Output('upload-status', 'children'),
     [Input('upload-data', 'contents')]
@@ -224,7 +226,6 @@ def update_upload_status(contents):
         ], style={'color': COLORS['success']})
     return ""
 
-# Callback pour mettre à jour le statut du téléchargement du fichier agenda
 @app.callback(
     Output('upload-agenda-status', 'children'),
     [Input('upload-agenda', 'contents')]
@@ -237,7 +238,9 @@ def update_agenda_upload_status(contents):
         ], style={'color': COLORS['success']})
     return ""
 
-# Callback principal pour afficher le contenu des onglets en appliquant le filtre global
+# -------------------------------
+# Callback principal pour afficher le contenu des onglets
+# -------------------------------
 @app.callback(
     Output('tabs-content', 'children'),
     [Input('tabs', 'value'),
@@ -249,6 +252,7 @@ def update_agenda_upload_status(contents):
 def update_tab(tab, orders_contents, agenda_contents, period_value, selected_date):
     global df, df_agenda
 
+    # Onglets Commandes (tab1 et tab2)
     if tab in ['tab1', 'tab2']:
         if not orders_contents:
             return html.Div([
@@ -397,7 +401,7 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
         existing_columns = {key: col for key, col in graph_columns.items() if col in df.columns}
 
         if tab == 'tab1':
-            # KPIs
+            # KPIs et graphiques pour le tableau de bord
             total_orders = len(df)
             pending_orders = len(df[~df["Order Status"].isin(["Order Complete", "Order Approved", "Task Complete"])])
             urgent_orders = len(df_filtered[df_filtered['Color'] == 'red'])
@@ -444,7 +448,7 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
             ])
             
             status_detail_card = html.Div(style={**CARD_STYLE, 'marginTop': '20px'}, children=[
-                html.H3("Total des dossiers", style={'margin-top': '0', 'marginBottom': '20px', 'color': COLORS['dark']}),
+                html.H3("Total des dossiers", style={'marginTop': '0', 'marginBottom': '20px', 'color': COLORS['dark']}),
                 html.Div(style={'overflowX': 'auto'}, children=[
                     dash_table.DataTable(
                         data=status_data.to_dict('records'),
@@ -465,16 +469,13 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                             {'if': {'column_id': 'Nombre'}, 'width': '120px'},
                             {'if': {'column_id': 'Valeur (€)'}, 'width': '150px'}
                         ],
-                        style_data_conditional=[
-                            {'if': {'row_index': 'odd'}, 'backgroundColor': 'rgba(0, 0, 0, 0.05)'}
-                        ],
+                        style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': 'rgba(0, 0, 0, 0.05)'}],
                     )
                 ])
             ])
             
-            # Création des graphiques
+            # Création des graphiques pour tab1
             graphs = []
-            # Première rangée : Order Type et Order Status
             row1 = html.Div(className='row', style={'display': 'flex', 'flexWrap': 'wrap', 'margin': '20px -10px'}, children=[])
             if "Order Type" in df.columns:
                 df_order_type = df["Order Type"].value_counts().reset_index()
@@ -519,7 +520,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                              ])])
                 )
             graphs.append(row1)
-            # Deuxième rangée : Répartition des produits et Statut de garantie
             row2 = html.Div(className='row', style={'display': 'flex', 'flexWrap': 'wrap', 'margin': '20px -10px'}, children=[])
             if 'product_line' in existing_columns:
                 product_values = df[existing_columns['product_line']].value_counts().to_dict()
@@ -560,7 +560,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                              children=[html.Div(style=CARD_STYLE, children=[dcc.Graph(figure=warranty_fig, config={'displayModeBar': False})])])
                 )
             graphs.append(row2)
-            # Section Free/Chargeable (diagramme basé sur le dataframe filtré globalement)
             if 'Free/Chargeable' in df.columns:
                 free_counts = df['Free/Chargeable'].value_counts()
                 fig_free = px.pie(
@@ -575,27 +574,26 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                     plot_bgcolor='rgba(0,0,0,0)',
                     paper_bgcolor='rgba(0,0,0,0)'
                 )
-                free_section = html.Div(style=CARD_STYLE, children=[
-                    dcc.Graph(figure=fig_free, config={'displayModeBar': False})
-                ])
+                free_section = html.Div(style=CARD_STYLE, children=[dcc.Graph(figure=fig_free, config={'displayModeBar': False})])
                 graphs.append(free_section)
             
             return html.Div([kpi_cards, status_detail_card, html.Div(graphs)])
         
         elif tab == 'tab2':
             return html.Div(style={**CARD_STYLE, 'overflowX': 'auto'}, children=[
-                html.H3("Commandes à suivre", style={'margin-top': '0', 'marginBottom': '20px', 'color': COLORS['dark']}),
+                html.H3("Commandes à suivre", style={'marginTop': '0', 'marginBottom': '20px', 'color': COLORS['dark']}),
                 html.P(f"{len(df_filtered)} commandes nécessitent votre attention",
                        style={'marginBottom': '20px', 'fontStyle': 'italic', 'color': COLORS['text']}),
                 dash_table.DataTable(
-                    columns=[{'name': col, 'id': col} for col in df_filtered.columns if col != 'Color'],
                     data=df_filtered.to_dict('records'),
+                    columns=[{'name': col, 'id': col} for col in df_filtered.columns if col != 'Color'],
                     style_header={
                         'backgroundColor': COLORS['light'],
                         'fontWeight': 'bold',
                         'border': f'1px solid {COLORS["light"]}',
                         'borderRadius': '3px',
                         'padding': '15px 5px',
+                        'textAlign': 'center'
                     },
                     style_cell={
                         'textAlign': 'left',
@@ -619,7 +617,7 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                     style_table={'minWidth': '100%'},
                 )
             ])
-    
+    # Onglet Agenda de Présence (tab3)
     elif tab == 'tab3':
         if not agenda_contents:
             return html.Div([
@@ -637,34 +635,104 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                 html.I(className="fas fa-exclamation-triangle", style={'fontSize': '48px', 'color': COLORS['danger']}),
                 html.H4(f"Erreur lors du traitement du fichier Agenda: {e}", style={'color': COLORS['danger']})
             ], style={'textAlign': 'center', 'marginTop': '30px'})
-        total_entries = len(df_agenda)
-        agenda_info = html.Div([
-            html.Div(style=CARD_STYLE, children=[
-                html.H3("Informations de l'Agenda de Présence", style={'margin-top': '0', 'color': COLORS['dark']}),
-                html.P(f"Nombre total d'entrées : {total_entries}", style={'color': COLORS['text']})
-            ]),
-            dash_table.DataTable(
-                columns=[{'name': col, 'id': col} for col in df_agenda.columns],
-                data=df_agenda.to_dict('records'),
+        
+        # On suppose que le fichier Excel Agenda contient une colonne "Nom" ainsi que des colonnes pour les jours (1 à 28)
+        # et éventuellement des lignes de totaux (par exemple "Total Jour présence workshop", "Mail traitées", etc.)
+        if "Nom" in df_agenda.columns:
+            total_labels = ["Total Jour présence workshoop", "Mail traitées", "Appel recue", "Total carton", "SORTIE EQUIPEMENT", "Garde"]
+            totals_data = df_agenda[df_agenda["Nom"].isin(total_labels)]
+            employee_data = df_agenda[~df_agenda["Nom"].isin(total_labels)]
+        else:
+            employee_data = df_agenda.copy()
+            totals_data = pd.DataFrame()
+
+        # 1) Tableau de Présence par Employé
+        presence_table = dash_table.DataTable(
+            data=employee_data.to_dict('records'),
+            columns=[{'name': col, 'id': col} for col in employee_data.columns],
+            style_header={
+                'backgroundColor': COLORS['light'],
+                'fontWeight': 'bold',
+                'border': f'1px solid {COLORS["light"]}',
+                'textAlign': 'center',
+            },
+            style_cell={
+                'textAlign': 'center',
+                'padding': '5px',
+                'fontFamily': 'Roboto',
+            },
+            style_data_conditional=[{'if': {'row_index': 'odd'}, 'backgroundColor': 'rgba(0,0,0,0.05)'}],
+            page_action="native",
+            filter_action="native",
+            sort_action="native",
+        )
+        
+        # 2) Calcul des totaux journaliers sur les colonnes "1" à "28" (pour les employés)
+        day_columns = [str(i) for i in range(1, 29)]
+        if set(day_columns).issubset(employee_data.columns):
+            daily_totals = {day: employee_data[day].apply(lambda x: 1 if x == "P" else 0).sum() for day in day_columns}
+            df_daily = pd.DataFrame(list(daily_totals.items()), columns=["Jour", "Présences Workshop"])
+            average_presence = df_daily["Présences Workshop"].mean()
+            workshop_table = dash_table.DataTable(
+                data=df_daily.to_dict('records'),
+                columns=[{'name': 'Jour', 'id': 'Jour'},
+                         {'name': 'Présences Workshop', 'id': 'Présences Workshop'}],
                 style_header={
                     'backgroundColor': COLORS['light'],
                     'fontWeight': 'bold',
-                    'border': f'1px solid {COLORS["light"]}',
                     'textAlign': 'center',
                 },
                 style_cell={
-                    'textAlign': 'left',
-                    'padding': '10px',
+                    'textAlign': 'center',
+                    'padding': '5px',
                     'fontFamily': 'Roboto',
-                },
-                page_action="native",
-                filter_action="native",
-                sort_action="native",
+                }
             )
+            workshop_summary = html.Div([
+                workshop_table,
+                html.P(f"Moyenne de présence workshop : {average_presence:.2f}",
+                       style={'marginTop': '10px', 'fontStyle': 'italic', 'textAlign': 'center'})
+            ], style=CARD_STYLE)
+        else:
+            workshop_summary = html.Div("Les colonnes de jours (1 à 28) sont absentes.", style={'color': COLORS['danger']})
+        
+        # 3) Section Totaux divers si le fichier contient des lignes totales
+        totals_section = html.Div()
+        if not totals_data.empty:
+            totals_section = html.Div([
+                html.H4("Totaux divers extraits du fichier", style={'marginBottom': '10px'}),
+                dash_table.DataTable(
+                    data=totals_data.to_dict('records'),
+                    columns=[{'name': col, 'id': col} for col in totals_data.columns],
+                    style_header={
+                        'backgroundColor': COLORS['light'],
+                        'fontWeight': 'bold',
+                        'textAlign': 'center',
+                    },
+                    style_cell={
+                        'textAlign': 'center',
+                        'padding': '5px',
+                        'fontFamily': 'Roboto',
+                    }
+                )
+            ], style=CARD_STYLE)
+        
+        # Assemblage final des sections de l'onglet Agenda de Présence
+        return html.Div([
+            html.H2("Agenda de Présence - Analyse", style={'marginBottom': '20px'}),
+            html.Div(style=CARD_STYLE, children=[
+                html.H4("Tableau de Présence par Employé (Jours 1 à 28)", style={'marginBottom': '10px'}),
+                presence_table
+            ]),
+            workshop_summary,
+            totals_section
         ])
-        return agenda_info
+    else:
+        return html.Div("Onglet non implémenté.")
 
-# Callback pour mettre à jour les options du dropdown de dates (basé sur "Created At")
+# -------------------------------
+# Callback pour mettre à jour le dropdown de dates (basé sur "Created At")
+# -------------------------------
 @app.callback(
     [Output('date-dropdown', 'options'),
      Output('date-dropdown', 'value')],
@@ -693,7 +761,9 @@ def update_date_options(period_value, contents):
     default_value = options[-1]['value'] if options else None
     return options, default_value
 
+# -------------------------------
 # Callback pour mettre à jour le graphique Free/Chargeable (exemple indépendant)
+# -------------------------------
 @app.callback(
     Output('free-chargeable-graph-container', 'children'),
     [Input('date-dropdown', 'value'),
@@ -755,6 +825,5 @@ def update_free_chargeable_graph(selected_date, period_value, contents):
         stats_div = html.Table(stats_rows, style={'margin': '20px auto', 'borderCollapse': 'collapse'})
     return html.Div([dcc.Graph(figure=fig, config={'displayModeBar': False}), stats_div])
 
-# Exécution de l'application
 if __name__ == '__main__':
     app.run_server(debug=False)
