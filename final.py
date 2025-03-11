@@ -7,19 +7,16 @@ import io
 import plotly.express as px
 from datetime import datetime
 
-# Custom CSS pour le style
+
 external_stylesheets = ['https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap']
 
-# Initialisation de l'application
 app = dash.Dash(__name__,
                 suppress_callback_exceptions=True,
                 external_stylesheets=external_stylesheets)
 
-# Variables globales pour stocker les données (fichier commandes et agenda)
 df = pd.DataFrame()
 df_agenda = pd.DataFrame()
 
-# Couleurs et styles
 COLORS = {
     'background': '#f8f9fa',
     'text': '#212529',
@@ -68,18 +65,14 @@ def parse_contents(contents):
     decoded = base64.b64decode(content_string)
     return pd.read_excel(io.BytesIO(decoded))
 
-# Disposition de l'application
 app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['background'], 'minHeight': '100vh'}, children=[
-    # Stockage interne
     dcc.Store(id='stored-data', storage_type='memory'),
     dcc.Store(id='stored-agenda-data', storage_type='memory'),
     
-    # En-tête
     html.Div(style={'backgroundColor': COLORS['primary'], 'padding': '20px', 'color': 'white'}, children=[
         html.H1("Tableau de Bord de Service", style={'textAlign': 'center', 'fontWeight': '500'}),
         html.P("Analyse et suivi des commandes de service", style={'textAlign': 'center', 'opacity': '0.8'})
     ]),
-    # Filtre global (pour le fichier commandes)
     html.Div(id='global-filter-container', style={'margin': '20px 0'}, children=[
         html.Div(style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'}, children=[
             html.Label("Période :", style={'marginRight': '10px', 'fontWeight': 'bold'}),
@@ -102,7 +95,6 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
         ])
     ]),
     html.Div(style=CONTENT_STYLE, children=[
-        # Upload fichier commandes
         html.Div(style=CARD_STYLE, children=[
             dcc.Upload(
                 id='upload-data',
@@ -135,7 +127,6 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
             ),
             html.Div(id='upload-status', style={'marginTop': '10px', 'textAlign': 'center'})
         ]),
-        # Upload fichier agenda
         html.Div(style=CARD_STYLE, children=[
             dcc.Upload(
                 id='upload-agenda',
@@ -168,7 +159,6 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
             ),
             html.Div(id='upload-agenda-status', style={'marginTop': '10px', 'textAlign': 'center'})
         ]),
-        # Onglets du tableau de bord
         dcc.Tabs(
             id="tabs",
             value='tab1',
@@ -211,9 +201,6 @@ app.layout = html.Div(style={'fontFamily': 'Roboto', 'backgroundColor': COLORS['
     ])
 ])
 
-# -------------------------------
-# Callbacks pour le chargement des fichiers
-# -------------------------------
 @app.callback(
     Output('upload-status', 'children'),
     [Input('upload-data', 'contents')]
@@ -238,9 +225,6 @@ def update_agenda_upload_status(contents):
         ], style={'color': COLORS['success']})
     return ""
 
-# -------------------------------
-# Callback principal pour afficher le contenu des onglets
-# -------------------------------
 @app.callback(
     Output('tabs-content', 'children'),
     [Input('tabs', 'value'),
@@ -252,7 +236,6 @@ def update_agenda_upload_status(contents):
 def update_tab(tab, orders_contents, agenda_contents, period_value, selected_date):
     global df, df_agenda
 
-    # Onglets Commandes (tab1 et tab2)
     if tab in ['tab1', 'tab2']:
         if not orders_contents:
             return html.Div([
@@ -276,7 +259,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                 html.H4("Le fichier Excel est vide.", style={'color': COLORS['warning']})
             ], style={'textAlign': 'center', 'marginTop': '30px'})
         
-        # Vérification des colonnes requises
         required_columns = ['Order No.', 'Customer Name', 'Service Technician', 'Model', 'Order Status',
                             'Created At', 'Approved Date', 'Task Completed Date', 'Order Completed Date',
                             'Waiting for PO At', 'In Work At', 'Wf. Part At(H)', 'Suspension At']
@@ -291,7 +273,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
         if 'Order Completed Date' not in df.columns:
             df['Order Completed Date'] = pd.NaT
         
-        # Conversion des dates
         date_columns = ['Created At', 'Approved Date', 'Task Completed Date', 'Order Completed Date',
                         'Waiting for PO At', 'In Work At', 'Wf. Part At(H)', 'Suspension At']
         for col in date_columns:
@@ -299,7 +280,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                 df[col] = pd.to_datetime(df[col], errors='coerce')
         today = datetime.today()
 
-        # Application du filtre global basé sur "Created At"
         if 'Created At' in df.columns and period_value and selected_date:
             if period_value == 'month':
                 month, year = selected_date.split('-')
@@ -314,11 +294,9 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                 mask = df['Created At'].dt.year == int(selected_date)
             df = df[mask]
 
-        # Création de la colonne "Total net value" si nécessaire
         if 'Total net value' not in df.columns:
             df['Total net value'] = 0
 
-        # Fonction de codage couleur selon ancienneté
         def color_code(row):
             today_date = datetime.today().date()
             if pd.notna(row['Order Completed Date']):
@@ -388,7 +366,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
             if col in df_filtered.columns:
                 df_filtered[col] = df_filtered[col].dt.strftime('%d %B %Y')
         
-        # Définition des colonnes disponibles pour les graphiques
         graph_columns = {
             'order_type': 'Order Type',
             'order_status': 'Order Status',
@@ -401,7 +378,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
         existing_columns = {key: col for key, col in graph_columns.items() if col in df.columns}
 
         if tab == 'tab1':
-            # KPIs et graphiques pour le tableau de bord
             total_orders = len(df)
             pending_orders = len(df[~df["Order Status"].isin(["Order Complete", "Order Approved", "Task Complete"])])
             urgent_orders = len(df_filtered[df_filtered['Color'] == 'red'])
@@ -474,7 +450,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                 ])
             ])
             
-            # Création des graphiques pour tab1
             graphs = []
             row1 = html.Div(className='row', style={'display': 'flex', 'flexWrap': 'wrap', 'margin': '20px -10px'}, children=[])
             if "Order Type" in df.columns:
@@ -617,7 +592,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                     style_table={'minWidth': '100%'},
                 )
             ])
-    # Onglet Agenda de Présence (tab3)
     elif tab == 'tab3':
         if not agenda_contents:
             return html.Div([
@@ -636,8 +610,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                 html.H4(f"Erreur lors du traitement du fichier Agenda: {e}", style={'color': COLORS['danger']})
             ], style={'textAlign': 'center', 'marginTop': '30px'})
         
-        # On suppose que le fichier Excel Agenda contient une colonne "Nom" ainsi que des colonnes pour les jours (1 à 28)
-        # et éventuellement des lignes de totaux (par exemple "Total Jour présence workshop", "Mail traitées", etc.)
         if "Nom" in df_agenda.columns:
             total_labels = ["Total Jour présence workshoop", "Mail traitées", "Appel recue", "Total carton", "SORTIE EQUIPEMENT", "Garde"]
             totals_data = df_agenda[df_agenda["Nom"].isin(total_labels)]
@@ -646,7 +618,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
             employee_data = df_agenda.copy()
             totals_data = pd.DataFrame()
 
-        # 1) Tableau de Présence par Employé
         presence_table = dash_table.DataTable(
             data=employee_data.to_dict('records'),
             columns=[{'name': col, 'id': col} for col in employee_data.columns],
@@ -667,7 +638,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
             sort_action="native",
         )
         
-        # 2) Calcul des totaux journaliers sur les colonnes "1" à "28" (pour les employés)
         day_columns = [str(i) for i in range(1, 29)]
         if set(day_columns).issubset(employee_data.columns):
             daily_totals = {day: employee_data[day].apply(lambda x: 1 if x == "P" else 0).sum() for day in day_columns}
@@ -696,7 +666,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
         else:
             workshop_summary = html.Div("Les colonnes de jours (1 à 28) sont absentes.", style={'color': COLORS['danger']})
         
-        # 3) Section Totaux divers si le fichier contient des lignes totales
         totals_section = html.Div()
         if not totals_data.empty:
             totals_section = html.Div([
@@ -717,7 +686,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
                 )
             ], style=CARD_STYLE)
         
-        # Assemblage final des sections de l'onglet Agenda de Présence
         return html.Div([
             html.H2("Agenda de Présence - Analyse", style={'marginBottom': '20px'}),
             html.Div(style=CARD_STYLE, children=[
@@ -730,9 +698,6 @@ def update_tab(tab, orders_contents, agenda_contents, period_value, selected_dat
     else:
         return html.Div("Onglet non implémenté.")
 
-# -------------------------------
-# Callback pour mettre à jour le dropdown de dates (basé sur "Created At")
-# -------------------------------
 @app.callback(
     [Output('date-dropdown', 'options'),
      Output('date-dropdown', 'value')],
@@ -761,9 +726,6 @@ def update_date_options(period_value, contents):
     default_value = options[-1]['value'] if options else None
     return options, default_value
 
-# -------------------------------
-# Callback pour mettre à jour le graphique Free/Chargeable (exemple indépendant)
-# -------------------------------
 @app.callback(
     Output('free-chargeable-graph-container', 'children'),
     [Input('date-dropdown', 'value'),
